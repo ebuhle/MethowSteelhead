@@ -4,8 +4,6 @@ title: 'Methow Hatchery Steelhead: Effects of Smolt Age on Age at Maturity and L
 author: "Eric Buhle, Chris Tatara, Kevin See, and ..."
 date: "March 7, 2018"
 output:
-  word_document:
-    toc: yes
   html_document:
     df_print: paged
     fig_caption: yes
@@ -16,6 +14,9 @@ output:
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(tidy = FALSE, highlight = TRUE, comment = NA, 
                       dev = "png", dev.args = list(type = "cairo-png"))
+
+if(!require(captioner))
+  devtools::install_github("adletaw/captioner")
 library(captioner)
 fig_nums <- captioner("Figure S", suffix = ": ", auto_space = FALSE, style = "b", style_prefix = TRUE)
 ```
@@ -56,7 +57,7 @@ As a constant, it can be removed from the likelihood. The upshot is that we can 
 First we'll load some packages and custom functions.
 
 ```{r getting_started, message = FALSE, warning = FALSE}
-setwd(file.path("~","MethowSteelhead"))
+# setwd(file.path("~","MethowSteelhead"))
 library(lubridate)
 library(gtools)
 library(Hmisc)
