@@ -3,7 +3,7 @@
 functions {
   int first_capture(int[] y_i) {
     for (t in 1:size(y_i))
-      if (y_i[t])
+      if(y_i[t])
         return t;
     return 0;
   }
@@ -13,7 +13,7 @@ functions {
     {
       int t;
       t = size(y_i) - t_rev;
-      if (y_i[t])
+      if(y_i[t])
         return t;
     }
     return 0;

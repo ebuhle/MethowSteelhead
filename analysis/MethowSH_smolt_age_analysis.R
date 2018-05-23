@@ -27,7 +27,7 @@
 #      survival are independent (?). "Dis-integrated model"?
 #===============================================================
 
-setwd(file.path("~","MethowSteelhead"))
+setwd(file.path("~","MethowSteelhead","analysis"))
 options(device = windows)
 library(lubridate)
 library(gtools)
