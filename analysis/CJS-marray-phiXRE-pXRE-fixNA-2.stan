@@ -180,7 +180,9 @@ model {
   }
   
   # Likelihood of capture history, marginalized over discrete latent states
-  LL = (yflm1 .* log(phi)) * ones[2:T] + (yfp1l .* log(p) + (1 - yfp1l) .* log1m(p)) * ones;
+  LL = (yflm1 .* log(phi)) * ones[2:T];
+  print(LL);
+  LL = LL + (yfp1l .* log(p) + (1 - yfp1l) .* log1m(p)) * ones;
   LL = n .* (LL + (yl .* log(chi)) * ones);
   
   # LL = rep_vector(0,M);
