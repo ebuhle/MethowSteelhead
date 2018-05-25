@@ -59,33 +59,33 @@ transformed data {
   int<lower=0,upper=T> first[M];   # first capture occasion
   int<lower=0,upper=T> last[M];    # last capture occasion
   int<lower=0,upper=T-1> last_minus_first[M];  # duh
-  matrix<lower=0,upper=1>[M,T-1] yflm1; # yfl[m,first[m]:(last[m]-1)] = 1; zero elsewhere
-  matrix<lower=0,upper=1>[M,T] yfp1l; # yfl[m,(first[m]+1):last[m]] = 1; zero elsewhere
-  matrix<lower=0,upper=1>[M,T] yl; # yl[m,last[m]] = 1; zero elsewhere
-  vector[T] ones;                  # vector of 1s
+  # matrix<lower=0,upper=1>[M,T-1] yflm1; # yfl[m,first[m]:(last[m]-1)] = 1; zero elsewhere
+  # matrix<lower=0,upper=1>[M,T] yfp1l; # yfl[m,(first[m]+1):last[m]] = 1; zero elsewhere
+  # matrix<lower=0,upper=1>[M,T] yl; # yl[m,last[m]] = 1; zero elsewhere
+  # vector[T] ones;                  # vector of 1s
   
   K_phi = sum(to_array_1d(indX_phi));
   K_p = sum(to_array_1d(indX_p));
   J_phi = max(to_array_1d(group_phi));
   J_p = max(to_array_1d(group_p));
   
-  yflm1 = rep_matrix(0,M,T-1);
-  yfp1l = rep_matrix(0,M,T);
-  yl = rep_matrix(0,M,T);
+  # yflm1 = rep_matrix(0,M,T-1);
+  # yfp1l = rep_matrix(0,M,T);
+  # yl = rep_matrix(0,M,T);
   for (m in 1:M)
   {
     first[m] = first_capture(y[m,]);
     last[m] = last_capture(y[m,]);
     last_minus_first[m] = last[m] - first[m];
-    if(last_minus_first[m] > 0)
-    {
-      yflm1[m,first[m]:(last[m]-1)] = rep_row_vector(1,last_minus_first[m]);
-      yfp1l[m,(first[m]+1):last[m]] = rep_row_vector(1,last_minus_first[m]);
-    }
-    yl[m,last[m]] = 1;
+    # if(last_minus_first[m] > 0)
+    # {
+    #   yflm1[m,first[m]:(last[m]-1)] = rep_row_vector(1,last_minus_first[m]);
+    #   yfp1l[m,(first[m]+1):last[m]] = rep_row_vector(1,last_minus_first[m]);
+    # }
+    # yl[m,last[m]] = 1;
   }
-  
-  ones = rep_vector(1,T);
+
+  # ones = rep_vector(1,T);
 }
 
 parameters {
@@ -183,23 +183,23 @@ model {
   }
   
   # Likelihood of capture history, marginalized over discrete latent states
-  LL = (yflm1 .* log(phi)) * ones[2:T];
-  LL = LL + (yfp1l .* log(p) + (1 - yfp1l) .* log1m(p)) * ones;
-  LL = n .* (LL + (yl .* log(chi)) * ones);
+  # LL = (yflm1 .* log(phi)) * ones[2:T];
+  # LL = LL + (yfp1l .* log(p) + (1 - yfp1l) .* log1m(p)) * ones;
+  # LL = n .* (LL + (yl .* log(chi)) * ones);
   
-  # LL = rep_vector(0,M);
-  # for (m in 1:M)
-  # {
-  #   if (last_minus_first[m] > 0)  # if history m was recaptured
-  #   {
-  #     for(t in (first[m]+1):last[m])
-  #     {
-  #       LL[m] += n[m] * log(phi[m,t-1]);                 # survival from t - 1 to t
-  #       LL[m] += n[m] * bernoulli_lpmf(y[m,t] | p[m,t]); # observation (captured or not)
-  #     }
-  #   }
-  #   LL[m] += n[m] * log(chi[m,last[m]]);   # Pr[not detected after last[m]]
-  # }
+  LL = rep_vector(0,M);
+  for (m in 1:M)
+  {
+    if (last_minus_first[m] > 0)  # if history m was recaptured
+    {
+      for(t in (first[m]+1):last[m])
+      {
+        LL[m] += n[m] * log(phi[m,t-1]);                 # survival from t - 1 to t
+        LL[m] += n[m] * bernoulli_lpmf(y[m,t] | p[m,t]); # observation (captured or not)
+      }
+    }
+    LL[m] += n[m] * log(chi[m,last[m]]);   # Pr[not detected after last[m]]
+  }
   
   # Likelihood of capture history added to log posterior
   target += sum(LL);
