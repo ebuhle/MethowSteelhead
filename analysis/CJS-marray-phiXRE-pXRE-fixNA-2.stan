@@ -77,8 +77,11 @@ transformed data {
     first[m] = first_capture(y[m,]);
     last[m] = last_capture(y[m,]);
     last_minus_first[m] = last[m] - first[m];
-    yflm1[m,first[m]:(last[m]-1)] = rep_row_vector(1,last_minus_first[m]);
-    yfp1l[m,(first[m]+1):last[m]] = rep_row_vector(1,last_minus_first[m]);
+    if(last_minus_first[m] > 0)
+    {
+      yflm1[m,first[m]:(last[m]-1)] = rep_row_vector(1,last_minus_first[m]);
+      yfp1l[m,(first[m]+1):last[m]] = rep_row_vector(1,last_minus_first[m]);
+    }
     yl[m,last[m]] = 1;
   }
   
@@ -181,7 +184,6 @@ model {
   
   # Likelihood of capture history, marginalized over discrete latent states
   LL = (yflm1 .* log(phi)) * ones[2:T];
-  print(LL);
   LL = LL + (yfp1l .* log(p) + (1 - yfp1l) .* log1m(p)) * ones;
   LL = n .* (LL + (yl .* log(chi)) * ones);
   
