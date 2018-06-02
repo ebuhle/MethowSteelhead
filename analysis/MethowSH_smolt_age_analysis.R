@@ -8,6 +8,9 @@
 # - (Put this on GitHub?)
 #
 # Issues:
+# - Size data contain one tag (3D9.1C2CA3C9DD) that is not in
+#   the capture history data. (Many tags in the CH data are
+#   not in the size data; presumably these weren't measured?)
 # - Should CJS allow time-varying covariate effects?
 #   => No for now; see if size explains some interannual var.
 # - Should we consider alternative groupings for the
@@ -54,33 +57,41 @@ methowSH <- read.csv("methowSH.csv", header = T)
 for(i in 8:29)
   methowSH[,i] <- as.Date(as.character(methowSH[,i]), "%m/%d/%Y")
 
+# Read in size data, change unobserved values and "outliers" to NA,
+# and merge into capture history data by tag ID
+methowSHsize <- read.csv("methowSHsize.csv", header = T)
+methowSHsize$length_rel[methowSHsize$error==1 | methowSHsize$type != 0] <- NA
+methowSH <- data.frame(methowSH[,1:4], 
+                       methowSHsize[match(methowSH$tag, methowSHsize$tag), c(2,6)],
+                       methowSH[,-(1:4)])
+
 # "Fix" return year and age at return
 
 # (1) Some tags were detected in adult ladders the same year they were released
 # (usually in April). Change those detections to NA.
-rty_test <- sweep(apply(methowSH[,13:29], 2, year), 1, methowSH$release_year, "==") 
+rty_test <- sweep(apply(methowSH[,15:31], 2, year), 1, methowSH$release_year, "==") 
 rty_indx <- which(rty_test & !is.na(rty_test), arr.ind = T)
-rty_indx[,"col"] <- rty_indx[,"col"] + 12
+rty_indx[,"col"] <- rty_indx[,"col"] + 14
 methowSH[rty_indx] <- NA
 
 # (2) return_year and adult_age are missing for some  fish that did, in fact, return as adults. 
 # Fill in those missing values.
-rty <- apply(methowSH[,13:29], 1, function(x) ifelse(all(is.na(x)), NA, min(year(x), na.rm = T)))
+rty <- apply(methowSH[,15:31], 1, function(x) ifelse(all(is.na(x)), NA, min(year(x), na.rm = T)))
 rty_NA <- !is.na(rty) & (is.na(methowSH$return_year) | is.na(methowSH$adult_age))
 methowSH$return_year[rty_NA] <- rty[rty_NA]
 methowSH$adult_age[rty_NA] <- methowSH$return_year[rty_NA] - methowSH$brood_year[rty_NA]
 
 # Convert dates to 0/1
-methowSH[,8:29] <- as.numeric(!is.na(methowSH[,8:29]))
+methowSH[,10:31] <- as.numeric(!is.na(methowSH[,10:31]))
 
 # Pool detections from MCJ:TWX (juvenile), TDA:WEA (adult), and MRC:BROOD (adult)
-methowSH <- cbind(methowSH[,1:6],
+methowSH <- cbind(methowSH[,1:8],
                   ocean_age = factor(methowSH$return_year - methowSH$release_year),
-                  methowSH[,7:12],
+                  methowSH[,9:14],
                   MCJTWX = as.numeric(apply(methowSH[,c("MCJ","JDJ","BON","TWX")] > 0, 1, any)),
-                  methowSH[,13:19],
+                  methowSH[,15:21],
                   TDAWEA = as.numeric(apply(methowSH[,c("TDA","MCN","PRA","RIA","RRF","WEA")] > 0, 1, any)),
-                  methowSH[,20:29],
+                  methowSH[,22:31],
                   MRCBRD = as.numeric(apply(methowSH[,c("MRC","MRT","MRW","SPRING","WFC","LOR","EWC","CRW","BROOD")] > 0, 1, any)))
 levels(methowSH$ocean_age) <- c("1","2+","2+")  # very few 3-ocean; group with 2-ocean
 
