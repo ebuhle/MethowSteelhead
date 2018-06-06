@@ -14,8 +14,10 @@ data {
 
 transformed data {
   int<lower=0> J;           # number of groups
+  # vector[N] log_L0;         # log(L0)
   
   J = max(group);
+  # log_L0 = log(L0);
 }
 
 parameters {
@@ -49,6 +51,7 @@ model {
   log_q = X * beta_log_q + sigma_log_q * log_q_z[group];
   q = exp(log_q);
   qinv = exp(-log_q);
+  # L0qinv = exp(qinv .* log_L0);
   for(i in 1:N)
     L0qinv[i] = L0[i]^qinv[i];
   

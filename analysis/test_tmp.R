@@ -3,13 +3,14 @@ NJ <- 200
 N <- J*NJ
 group <- rep(1:J, each = NJ)
 X <- cbind(1, rep(rep(0:1, each = NJ/2), J))
+X[,2] <- X[,2] - mean(X[,2])
 
 L0 <- rlnorm(N, log(ifelse(X[,2], 10, 15)), 0.5)
 dt <- rep(1,N)
-beta_log_r <- c(1,0.5)
+beta_log_r <- c(0.2,0.5)
 sigma_log_r <-  0.2
 r <- exp(X %*% beta_log_r + rnorm(J, 0, sigma_log_r)[group])
-beta_log_q <- c(0.8,-0.5)
+beta_log_q <- c(1,-0.2)
 sigma_log_q <- 0.2
 q <- exp(X %*% beta_log_q + rnorm(J, 0, sigma_log_q)[group])
 sigma <- 0.1
