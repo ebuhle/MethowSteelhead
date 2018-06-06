@@ -61,6 +61,7 @@ for(i in 8:29)
 # and merge into capture history data by tag ID
 methowSHsize <- read.csv("methowSHsize.csv", header = T)
 methowSHsize$length_rel[methowSHsize$error==1 | methowSHsize$type != 0] <- NA
+methowSHsize[,c("length_rel","length_tag")] <- methowSHsize[,c("length_rel","length_tag")]/10 # convert to cm
 methowSH <- data.frame(methowSH[,1:4], 
                        methowSHsize[match(methowSH$tag, methowSHsize$tag), c(2,6)],
                        methowSH[,-(1:4)])
