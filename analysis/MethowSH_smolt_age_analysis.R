@@ -452,8 +452,8 @@ legend("topleft", c("1","2"), title = "Smolt age", pch = 16, cex = 1.2, lty = 1,
 # (Marginal) adult age distribution of S1 vs. S2: observed and predicted 
 
 dev.new()
+# png(filename="adult_age.png", width=7, height=7, units="in", res=300, type="cairo-png")
 par(mar = c(5,5,4,1))
-# png(filename="adult_age.png", width=7 height=7, units="in", res=300, type="cairo-png")
 histS1S2 <- table(smolt_age = methowSH$smolt_age, adult_age = methowSH$adult_age)
 histS1S2 <- sweep(histS1S2, 1,rowSums(histS1S2), "/")
 bp <- barplot(histS1S2, beside = TRUE, space = c(0.05,1), names = dimnames(histS1S2)$adult_age,

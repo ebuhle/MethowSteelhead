@@ -4,6 +4,8 @@ title: 'Methow Hatchery Steelhead: Effects of Smolt Age on Age at Maturity and L
 author: "Eric Buhle, Chris Tatara, Kevin See, and ..."
 date: "March 7, 2018"
 output:
+  word_document:
+    toc: yes
   html_document:
     df_print: paged
     fig_caption: yes
