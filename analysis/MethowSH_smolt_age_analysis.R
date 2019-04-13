@@ -478,7 +478,7 @@ legend("topright", c("1","2"), title = "Smolt age", pch = "", lty = 1, cex = 1.4
 
 # Posterior predictive checking for CJS models based on m-array cell proportions
 
-cjs_ppd_iter <- 1000
+cjs_ppd_iter <- 100
 system.time(
   cjs_ppd <- sim_phi_tot(cjs = cjs_fixNA3, fit_oa = fit_oa1b, iter = cjs_ppd_iter, 
                          adult_age = adult_age,release_years = unique(methowSHm$release_year),
