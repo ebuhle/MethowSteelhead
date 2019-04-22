@@ -7,6 +7,7 @@ output:
   word_document:
     toc: yes
   html_document:
+    keep_md: true
     df_print: paged
     fig_caption: yes
     toc: yes
