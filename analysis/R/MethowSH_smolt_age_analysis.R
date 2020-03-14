@@ -397,13 +397,12 @@ print(tab2, digits = 2)
 
 dev.new()
 ggplot(methowSHsize, aes(x = length_tag, y = length_rel, shape = smolt_age, color = smolt_age)) + 
-  scale_x_log10() + scale_y_log10() +
   geom_point(size = 1.2) + scale_shape_manual(values = c(1,16)) + 
-  scale_color_manual(values = c("darkgray","black")) +
+  scale_color_manual(values = c("darkgray","black")) + scale_x_log10() +
   labs(x = "Length at tagging (cm)", y = "Length at release (cm)") + 
   theme(axis.title = element_text(size = rel(4)), axis.ticks = element_text(size = rel(3)),
         legend.text = element_text(size = rel(4)), strip.text = element_text(size = rel(10))) +
-  theme_bw() + facet_wrap(~ brood_year)
+  theme_bw() + facet_wrap(~ release_year)
 
 
 #------------------------
