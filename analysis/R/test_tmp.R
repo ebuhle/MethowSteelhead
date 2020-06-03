@@ -16,7 +16,7 @@ sigma_log_q <- 0.2
 q <- exp(X %*% beta_log_q + rnorm(J, 0, sigma_log_q)[group])
 sigma <- 0.1
 
-Lt <- rlnorm(N, q * log(L0 + r * dt), sigma)
+Lt <- rlnorm(N, q * log(L0^(1/q) + r * dt), sigma)
 
 windows()
 ggplot(data.frame(L0 = L0, Lt = Lt, X = factor(X[,2]), group = group), 

@@ -40,6 +40,7 @@ source(here("analysis","R","vioplot2.R"))
 library(yarrr)
 library(rstan)
 library(rstanarm)
+library(brms)
 library(loo)
 library(shinystan)
 source(here("analysis","R","extract1.R"))
@@ -54,13 +55,13 @@ if(file.exists(here("analysis","results","MethowSH_stanfit.RData")))
 #-----------------
 
 # Read in capture history data (observations are dates)
-methowSH <- read.csv(here("data","methowSH.csv"), header = T)
+methowSH <- read.csv(here("data","methowSH.csv"), header = TRUE, stringsAsFactors = TRUE)
 for(i in 8:29)
   methowSH[,i] <- as.Date(as.character(methowSH[,i]), "%m/%d/%Y")
 
 # Read in size data, change unobserved values and "outliers" to NA,
 # and merge into capture history data by tag ID
-methowSHsize <- read.csv(here("data","methowSHsize.csv"), header = T)
+methowSHsize <- read.csv(here("data","methowSHsize.csv"), header = TRUE, stringsAsFactors = TRUE)
 methowSHsize$length_rel[methowSHsize$error==1 | methowSHsize$type != 0] <- NA
 methowSHsize[,c("length_rel","length_tag")] <- methowSHsize[,c("length_rel","length_tag")]/10 # convert to cm
 methowSH <- data.frame(methowSH[,1:4], 
@@ -72,7 +73,7 @@ methowSH <- data.frame(methowSH[,1:4],
 # (1) Some tags were detected in adult ladders the same year they were released
 # (usually in April). Change those detections to NA.
 rty_test <- sweep(apply(methowSH[,15:31], 2, year), 1, methowSH$release_year, "==") 
-rty_indx <- which(rty_test & !is.na(rty_test), arr.ind = T)
+rty_indx <- which(rty_test & !is.na(rty_test), arr.ind = TRUE)
 rty_indx[,"col"] <- rty_indx[,"col"] + 14
 methowSH[rty_indx] <- NA
 
@@ -145,6 +146,98 @@ group_p <- cbind(matrix(rep(release_year, 3), ncol = 3), matrix(rep(return_year,
 # Centered predictors for CJS models
 smolt_age <- scale(as.numeric(methowSHm$smolt_age), scale=F)
 adult_age <- na.replace(scale(methowSHm$adult_age, scale = F), 0)  # arbitrary NA value
+
+
+#--------------------------------------------------------------
+# PARABOLIC GROWTH MODELS
+# Predict smolt length at release from length at tagging,
+# grouped by release year
+#--------------------------------------------------------------
+
+# Growth rate varies by release year
+# Shape parameter constant
+pgm0 <- brm(bf(log(length_rel) ~ exp(lq)*log(exp(lr) + length_tag^(exp(-lq))),
+               lr ~ 1 + (1 | release_year), lq ~ 1, nl = TRUE),
+            data = na.omit(methowSH[,c("release_year","smolt_age","length_tag","length_rel")]),
+            prior = c(prior(normal(0,5), nlpar = lr),
+                      prior(normal(0,5), nlpar = lq)),
+            chains = 3, cores = 3, control = list(max_treedepth = 12))
+
+summary(pgm0)
+
+
+## S1 ONLY
+# Growth rate varies by release year
+# Shape parameter constant
+pgm0S1 <- brm(bf(log(length_rel) ~ exp(lq)*log(exp(lr) + length_tag^(exp(-lq))),
+               lr ~ 1 + (1 | release_year), lq ~ 1, nl = TRUE),
+            data = na.omit(methowSH[methowSH$smolt_age=="S1",c("release_year","length_tag","length_rel")]),
+            prior = c(prior(normal(0,5), nlpar = lr),
+                      prior(normal(0,5), nlpar = lq)),
+            chains = 3, cores = 3, control = list(max_treedepth = 12))
+
+summary(pgm0S1)
+
+
+# Growth rate ~ smolt_age, intercept varies with release year
+# Shape parameter constant
+pgm1 <- brm(bf(log(length_rel) ~ exp(lq)*log(exp(lr) + length_tag^(exp(-lq))),
+               lr ~ smolt_age + (1 | release_year), lq ~ 1, nl = TRUE),
+            data = na.omit(methowSH[,c("release_year","smolt_age","length_tag","length_rel")]),
+            prior = c(prior(normal(0,5), nlpar = lr),
+                      prior(normal(0,5), nlpar = lq)),
+            chains = 3, cores = 3, control = list(max_treedepth = 12))
+
+summary(pgm1)
+
+
+# Growth rate ~ smolt_age, intercept varies with release year
+# Shape parameter varies with release year
+pgm2 <- brm(bf(log(length_rel) ~ exp(lq)*log(exp(lr) + length_tag^(exp(-lq))),
+               lr ~ smolt_age + (1 | release_year), lq ~ 1 + (1 | release_year), nl = TRUE),
+            data = na.omit(methowSH[,c("release_year","smolt_age","length_tag","length_rel")]),
+            prior = c(prior(normal(0,5), nlpar = lr),
+                      prior(normal(0,5), nlpar = lq)),
+            chains = 3, cores = 3, control = list(max_treedepth = 12))
+
+summary(pgm2)
+
+
+# Growth rate ~ smolt_age, intercept varies with release year
+# Shape parameter constant
+pgm1b <- brm(bf(log(length_rel) ~ exp(lq)*log(exp(lr) + length_tag),
+                lr ~ smolt_age + (1 | release_year), lq ~ 1, nl = TRUE),
+             data = na.omit(methowSH[,c("release_year","smolt_age","length_tag","length_rel")]),
+             prior = c(prior(normal(0,5), nlpar = lr),
+                       prior(normal(0,5), nlpar = lq)),
+             chains = 3, cores = 3, control = list(max_treedepth = 12))
+
+summary(pgm1b)
+
+
+# Growth rate ~ smolt_age, intercept varies with release year
+# Shape parameter varies with release year
+pgm3b <- brm(bf(log(length_rel) ~ exp(lq)*log(exp(lr) + length_tag),
+               lr ~ smolt_age + (1 | release_year), lq ~ smolt_age + (1 | release_year), nl = TRUE),
+            data = na.omit(methowSH[,c("release_year","smolt_age","length_tag","length_rel")]),
+            prior = c(prior(normal(0,5), nlpar = lr),
+                      prior(normal(0,5), nlpar = lq)),
+            chains = 3, cores = 3, control = list(max_treedepth = 12))
+
+summary(pgm3b)
+
+
+# # Growth rate ~ smolt_age, intercept varies with release year
+# # Shape parameter ~ smolt_age, intercept varies with release year
+# pgm3 <- brm(bf(log(length_rel) ~ exp(lq)*log(exp(lr) + length_tag^(exp(-lq))),
+#                lr ~ smolt_age + (1 | release_year), lq ~ smolt_age + (1 | release_year), 
+#                nl = TRUE),
+#             data = na.omit(methowSH[,c("release_year","smolt_age","length_tag","length_rel")]),
+#             prior = c(prior(normal(0,5), nlpar = lr),
+#                       prior(normal(0,5), nlpar = lq)),
+#             chains = 3, cores = 3, control = list(max_treedepth = 12))
+# 
+# summary(pgm3)
 
 
 #--------------------------------------------------------------
@@ -391,18 +484,38 @@ print(tab2, digits = 2)
 # FIGURES
 #-------------------------------------------------
 
-#--------------------------------
+#-------------------------------------
 # Length at release vs. tagging
-#--------------------------------
+# Show fit of parabolic growth model
+#-------------------------------------
 
-dev.new()
+mod <- pgm1b
+npts <- 100
+length_tag <- tapply(methowSH$length_tag, 
+                     list(smolt_age = methowSH$smolt_age, release_year = methowSH$release_year), 
+                     function(x) seq(min(x, na.rm = TRUE), max(x, na.rm = TRUE), length.out = npts))
+newdata <- expand.grid(smolt_age = dimnames(length_tag)$smolt_age,
+                       release_year = dimnames(length_tag)$release_year)
+newdata <- data.frame(newdata[rep(1:nrow(newdata), each = npts),],
+                      length_tag = unlist(length_tag))
+fit <- predict(mod, newdata = newdata, allow_new_levels = TRUE, robust = TRUE, summary = TRUE)
+newdata <- data.frame(newdata, length_rel = exp(fit[,"Estimate"]), 
+                      length_rel_L = exp(fit[,"Q2.5"]), length_rel_U = exp(fit[,"Q97.5"]))
+
+dev.new(width = 10, height = 7)
 ggplot(methowSHsize, aes(x = length_tag, y = length_rel, shape = smolt_age, color = smolt_age)) + 
-  geom_point(size = 1.2) + scale_shape_manual(values = c(1,16)) + 
-  scale_color_manual(values = c("darkgray","black")) + scale_x_log10() +
+  geom_ribbon(aes(x = length_tag, ymin = length_rel_L, ymax = length_rel_U, fill = smolt_age),
+              data = newdata, linetype = 0, alpha = 0.8) +
+  geom_line(aes(x = length_tag, y = length_rel, color = smolt_age), lwd = 0.8, data = newdata) +
+  geom_point(size = 1.2) + scale_shape_manual(values = c(1,1)) + 
+  scale_color_manual(values = c("darkgray","black")) + #scale_x_log10() + scale_y_log10() +
+  scale_fill_manual(values = c("lightgray","darkgray")) + 
   labs(x = "Length at tagging (cm)", y = "Length at release (cm)") + 
   theme(axis.title = element_text(size = rel(4)), axis.ticks = element_text(size = rel(3)),
-        legend.text = element_text(size = rel(4)), strip.text = element_text(size = rel(10))) +
-  theme_bw() + facet_wrap(~ release_year)
+        legend.text = element_text(size = rel(4)), strip.text = element_text(size = rel(10)),
+        panel.grid = element_blank()) + theme_bw() + facet_wrap(~ release_year)
+
+rm(list = c("npts","mod","fit","length_tag","newdata"))
 
 
 #------------------------

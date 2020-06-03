@@ -35,14 +35,14 @@ model {
   // Priors
   beta_log_r ~ normal(0,5);
   sigma_log_r ~ normal(0,5);
-  log_r_z ~ normal(0,1);  // implies log(r) ~ normal(mu_log_r, sigma_log_r)
+  log_r_z ~ std_normal();  // implies log(r) ~ normal(mu_log_r, sigma_log_r)
   beta_log_q ~ normal(0,5);
   sigma_log_q ~ normal(0,5);
-  log_q_z ~ normal(0,1);  // implies log(q) ~ normal(mu_log_q, sigma_log_q)
+  log_q_z ~ std_normal();  // implies log(q) ~ normal(mu_log_q, sigma_log_q)
   sigma ~ normal(0,2);
   
   // Likelihood
   r = exp(X * beta_log_r + sigma_log_r * log_r_z[group]);
   q = exp(X * beta_log_q + sigma_log_q * log_q_z[group]);
-  Lt ~ lognormal(q .* log(L0 + r .* dt), sigma);
+  Lt ~ lognormal(q .* log(L0^(1/q) + r .* dt), sigma);
 }
