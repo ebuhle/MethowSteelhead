@@ -35,12 +35,13 @@ library(lubridate)
 library(here)
 library(gtools)
 library(Hmisc)
+library(matrixStats)
 library(vioplot)
 source(here("analysis","R","vioplot2.R"))
 library(yarrr)
 library(rstan)
 library(rstanarm)
-library(brms)
+library(mgcv)
 library(loo)
 library(shinystan)
 source(here("analysis","R","extract1.R"))
@@ -97,6 +98,8 @@ methowSH <- cbind(methowSH[,1:8],
                   methowSH[,22:31],
                   MRCBRD = as.numeric(apply(methowSH[,c("MRC","MRT","MRW","SPRING","WFC","LOR","EWC","CRW","BROOD")] > 0, 1, any)))
 levels(methowSH$ocean_age) <- c("1","2+","2+")  # very few 3-ocean; group with 2-ocean
+methowSH$brood_year <- factor(methowSH$brood_year)
+methowSH$release_year <- factor(methowSH$release_year)
 
 # Convert crosstabs of ocean age by release year and smolt age to data frame
 # for use in posterior predictive checking of binomial GLMMs
@@ -148,95 +151,179 @@ smolt_age <- scale(as.numeric(methowSHm$smolt_age), scale=F)
 adult_age <- na.replace(scale(methowSHm$adult_age, scale = F), 0)  # arbitrary NA value
 
 
-#--------------------------------------------------------------
-# PARABOLIC GROWTH MODELS
+#------------------------------------------------------------------------------
+# GAM GROWTH MODELS
 # Predict smolt length at release from length at tagging,
-# grouped by release year
-#--------------------------------------------------------------
-
-# Growth rate varies by release year
-# Shape parameter constant
-pgm0 <- brm(bf(log(length_rel) ~ exp(lq)*log(exp(lr) + length_tag^(exp(-lq))),
-               lr ~ 1 + (1 | release_year), lq ~ 1, nl = TRUE),
-            data = na.omit(methowSH[,c("release_year","smolt_age","length_tag","length_rel")]),
-            prior = c(prior(normal(0,5), nlpar = lr),
-                      prior(normal(0,5), nlpar = lq)),
-            chains = 3, cores = 3, control = list(max_treedepth = 12))
-
-summary(pgm0)
+# grouped by release year 
+# (Model GS: global trend plus year-specific smoothers with a global penalty)
+#------------------------------------------------------------------------------
 
 
-## S1 ONLY
-# Growth rate varies by release year
-# Shape parameter constant
-pgm0S1 <- brm(bf(log(length_rel) ~ exp(lq)*log(exp(lr) + length_tag^(exp(-lq))),
-               lr ~ 1 + (1 | release_year), lq ~ 1, nl = TRUE),
-            data = na.omit(methowSH[methowSH$smolt_age=="S1",c("release_year","length_tag","length_rel")]),
-            prior = c(prior(normal(0,5), nlpar = lr),
-                      prior(normal(0,5), nlpar = lq)),
-            chains = 3, cores = 3, control = list(max_treedepth = 12))
+hgam_length <- gam(log(length_rel) ~ s(length_tag, smolt_age, bs = "fs", k = 5, m = 2) + 
+                     s(length_tag, release_year, bs = "fs", k = 5, m = 2),
+                   data = methowSH, na.action = na.omit, drop.unused.levels = FALSE,
+                   method = "ML")
 
-summary(pgm0S1)
+# hgam_length <- gam(log_length_rel ~ smolt_age +
+#                      s(length_tag, by = smolt_age, bs = "tp", k = 5, m = 2) + 
+#                      s(release_year, bs = "re") +
+#                      s(length_tag, by = release_year, bs = "tp", k = 5, m = 2),
+#                    data = transform(methowSH, log_length_rel = log(length_rel)), 
+#                    na.action = na.omit, drop.unused.levels = TRUE,
+#                    method = "ML")
 
+summary(hgam_length)
+   
+                  
+dat <- na.omit(methowSH[,c("smolt_age","release_year","length_tag","length_rel")])
+dat$log_length_rel <- log(dat$length_rel)
 
-# Growth rate ~ smolt_age, intercept varies with release year
-# Shape parameter constant
-pgm1 <- brm(bf(log(length_rel) ~ exp(lq)*log(exp(lr) + length_tag^(exp(-lq))),
-               lr ~ smolt_age + (1 | release_year), lq ~ 1, nl = TRUE),
-            data = na.omit(methowSH[,c("release_year","smolt_age","length_tag","length_rel")]),
-            prior = c(prior(normal(0,5), nlpar = lr),
-                      prior(normal(0,5), nlpar = lq)),
-            chains = 3, cores = 3, control = list(max_treedepth = 12))
+gammS1 <- stan_gamm4(log_length_rel ~ smolt_age + 
+                       s(length_tag, by = smolt_age, bs = "tp", k = 5, m = 2, id = 0) + 
+                       s(length_tag, by = release_year, bs = "tp", k = 5, m = 2, id = 0),
+                     random = ~ (1 | release_year),
+                     # data = methowSH, na.action = na.omit,
+                     data = dat,
+                     prior = normal(0,5), 
+                     prior_intercept = normal(0,5),
+                     prior_smooth = exponential(0.1),
+                     chains = 3, iter = 2000, warmup = 1000, cores = 3, 
+                     control = list(max_treedepth = 15))
 
-summary(pgm1)
-
-
-# Growth rate ~ smolt_age, intercept varies with release year
-# Shape parameter varies with release year
-pgm2 <- brm(bf(log(length_rel) ~ exp(lq)*log(exp(lr) + length_tag^(exp(-lq))),
-               lr ~ smolt_age + (1 | release_year), lq ~ 1 + (1 | release_year), nl = TRUE),
-            data = na.omit(methowSH[,c("release_year","smolt_age","length_tag","length_rel")]),
-            prior = c(prior(normal(0,5), nlpar = lr),
-                      prior(normal(0,5), nlpar = lq)),
-            chains = 3, cores = 3, control = list(max_treedepth = 12))
-
-summary(pgm2)
+summary(gammS1)
 
 
-# Growth rate ~ smolt_age, intercept varies with release year
-# Shape parameter constant
-pgm1b <- brm(bf(log(length_rel) ~ exp(lq)*log(exp(lr) + length_tag),
-                lr ~ smolt_age + (1 | release_year), lq ~ 1, nl = TRUE),
-             data = na.omit(methowSH[,c("release_year","smolt_age","length_tag","length_rel")]),
-             prior = c(prior(normal(0,5), nlpar = lr),
-                       prior(normal(0,5), nlpar = lq)),
-             chains = 3, cores = 3, control = list(max_treedepth = 12))
 
-summary(pgm1b)
-
-
-# Growth rate ~ smolt_age, intercept varies with release year
-# Shape parameter varies with release year
-pgm3b <- brm(bf(log(length_rel) ~ exp(lq)*log(exp(lr) + length_tag),
-               lr ~ smolt_age + (1 | release_year), lq ~ smolt_age + (1 | release_year), nl = TRUE),
-            data = na.omit(methowSH[,c("release_year","smolt_age","length_tag","length_rel")]),
-            prior = c(prior(normal(0,5), nlpar = lr),
-                      prior(normal(0,5), nlpar = lq)),
-            chains = 3, cores = 3, control = list(max_treedepth = 12))
-
-summary(pgm3b)
-
-
-# # Growth rate ~ smolt_age, intercept varies with release year
-# # Shape parameter ~ smolt_age, intercept varies with release year
-# pgm3 <- brm(bf(log(length_rel) ~ exp(lq)*log(exp(lr) + length_tag^(exp(-lq))),
-#                lr ~ smolt_age + (1 | release_year), lq ~ smolt_age + (1 | release_year), 
-#                nl = TRUE),
+# #--------------------------------------------------------------
+# # POLYNOMIAL REGRESSION GROWTH MODELS
+# # Predict smolt length at release from length at tagging,
+# # grouped by release year
+# #--------------------------------------------------------------
+# 
+# ## S1 ONLY
+# # Coefficients vary by release year
+# polyS1 <- brm(log(length_rel) ~ poly(length_tag, 3) + (poly(length_tag, 3) | release_year),
+#               data = na.omit(methowSH[methowSH$smolt_age=="S1",c("release_year","length_tag","length_rel")]),
+#               prior = prior(normal(0,5)),
+#               chains = 3, cores = 3, control = list(max_treedepth = 12))
+# 
+# summary(polyS1)
+# 
+# 
+# 
+# #--------------------------------------------------------------
+# # SCHNUTE GROWTH MODELS
+# # Predict smolt length at release from length at tagging,
+# # grouped by release year
+# #--------------------------------------------------------------
+# 
+# ## S1 ONLY
+# # Asymptotic length varies by release year
+# # Shape parameters vary by release year
+# sgmS1 <- brm(bf(log(length_rel) ~ (1/b)*(exp(-a)*length_tag^b + (1 - exp(-a))*exp(logLinf)^b),
+#                 a ~ 1 + (1 | release_year), 
+#                 b ~ 1 + (1 | release_year),
+#                 logLinf ~ 1 + (1 | release_year),
+#                 nl = TRUE),
+#              data = na.omit(methowSH[methowSH$smolt_age=="S1",c("release_year","length_tag","length_rel")]),
+#              prior = c(prior(normal(0,5), nlpar = a),
+#                        prior(normal(0,5), nlpar = b),
+#                        prior(normal(0,5), nlpar = logLinf)),
+#              chains = 3, cores = 3, control = list(max_treedepth = 12))
+# 
+# summary(sgmS1)
+# 
+# 
+# 
+# #--------------------------------------------------------------
+# # PARABOLIC GROWTH MODELS
+# # Predict smolt length at release from length at tagging,
+# # grouped by release year
+# #--------------------------------------------------------------
+# 
+# # Growth rate varies by release year
+# # Shape parameter constant
+# pgm0 <- brm(bf(log(length_rel) ~ exp(lq)*log(exp(lr) + length_tag^(exp(-lq))),
+#                lr ~ 1 + (1 | release_year), lq ~ 1, nl = TRUE),
 #             data = na.omit(methowSH[,c("release_year","smolt_age","length_tag","length_rel")]),
 #             prior = c(prior(normal(0,5), nlpar = lr),
 #                       prior(normal(0,5), nlpar = lq)),
 #             chains = 3, cores = 3, control = list(max_treedepth = 12))
 # 
+# summary(pgm0)
+# 
+# 
+# ## S1 ONLY
+# # Growth rate varies by release year
+# # Shape parameter constant
+# pgm0S1 <- brm(bf(log(length_rel) ~ exp(lq)*log(exp(lr) + length_tag^(exp(-lq))),
+#                lr ~ 1 + (1 | release_year), lq ~ 1, nl = TRUE),
+#             data = na.omit(methowSH[methowSH$smolt_age=="S1",c("release_year","length_tag","length_rel")]),
+#             prior = c(prior(normal(0,5), nlpar = lr),
+#                       prior(normal(0,5), nlpar = lq)),
+#             chains = 3, cores = 3, control = list(max_treedepth = 12))
+# 
+# summary(pgm0S1)
+# 
+# 
+# # Growth rate ~ smolt_age, intercept varies with release year
+# # Shape parameter constant
+# pgm1 <- brm(bf(log(length_rel) ~ exp(lq)*log(exp(lr) + length_tag^(exp(-lq))),
+#                lr ~ smolt_age + (1 | release_year), lq ~ 1, nl = TRUE),
+#             data = na.omit(methowSH[,c("release_year","smolt_age","length_tag","length_rel")]),
+#             prior = c(prior(normal(0,5), nlpar = lr),
+#                       prior(normal(0,5), nlpar = lq)),
+#             chains = 3, cores = 3, control = list(max_treedepth = 12))
+# 
+# summary(pgm1)
+# 
+# 
+# # Growth rate ~ smolt_age, intercept varies with release year
+# # Shape parameter varies with release year
+# pgm2 <- brm(bf(log(length_rel) ~ exp(lq)*log(exp(lr) + length_tag^(exp(-lq))),
+#                lr ~ smolt_age + (1 | release_year), lq ~ 1 + (1 | release_year), nl = TRUE),
+#             data = na.omit(methowSH[,c("release_year","smolt_age","length_tag","length_rel")]),
+#             prior = c(prior(normal(0,5), nlpar = lr),
+#                       prior(normal(0,5), nlpar = lq)),
+#             chains = 3, cores = 3, control = list(max_treedepth = 12))
+# 
+# summary(pgm2)
+# 
+# 
+# # Growth rate ~ smolt_age, intercept varies with release year
+# # Shape parameter constant
+# pgm1b <- brm(bf(log(length_rel) ~ exp(lq)*log(exp(lr) + length_tag),
+#                 lr ~ smolt_age + (1 | release_year), lq ~ 1, nl = TRUE),
+#              data = na.omit(methowSH[,c("release_year","smolt_age","length_tag","length_rel")]),
+#              prior = c(prior(normal(0,5), nlpar = lr),
+#                        prior(normal(0,5), nlpar = lq)),
+#              chains = 3, cores = 3, control = list(max_treedepth = 12))
+# 
+# summary(pgm1b)
+# 
+# 
+# # Growth rate ~ smolt_age, intercept varies with release year
+# # Shape parameter varies with release year
+# pgm3b <- brm(bf(log(length_rel) ~ exp(lq)*log(exp(lr) + length_tag),
+#                lr ~ smolt_age + (1 | release_year), lq ~ smolt_age + (1 | release_year), nl = TRUE),
+#             data = na.omit(methowSH[,c("release_year","smolt_age","length_tag","length_rel")]),
+#             prior = c(prior(normal(0,5), nlpar = lr),
+#                       prior(normal(0,5), nlpar = lq)),
+#             chains = 3, cores = 3, control = list(max_treedepth = 12))
+# 
+# summary(pgm3b)
+# 
+# 
+# # Growth rate ~ smolt_age, intercept varies with release year
+# # Shape parameter ~ smolt_age, intercept varies with release year
+# pgm3 <- brm(bf(log(length_rel) ~ exp(lq)*log(exp(lr) + length_tag^(exp(-lq))),
+#                lr ~ smolt_age + (1 | release_year), lq ~ smolt_age + (1 | release_year),
+#                nl = TRUE),
+#             data = na.omit(methowSH[,c("release_year","smolt_age","length_tag","length_rel")]),
+#             prior = c(prior(normal(0,5), nlpar = lr),
+#                       prior(normal(0,5), nlpar = lq)),
+#             chains = 3, cores = 3, control = list(max_treedepth = 12))
+#
 # summary(pgm3)
 
 
@@ -456,7 +543,7 @@ compair_cjs
 # Save workspace (only the stanfit objects)
 #---------------------------------------------
 
-save(list = ls()[substring(ls(),1,4) %in% c("cjs_","fit_")], 
+save(list = ls()[substring(ls(),1,4) %in% c("cjs_","fit_","hgam")], 
      file = here("analysis","results","MethowSH_stanfit.RData"))
 
 
@@ -489,33 +576,36 @@ print(tab2, digits = 2)
 # Show fit of parabolic growth model
 #-------------------------------------
 
-mod <- pgm1b
+mod <- hgam_length
 npts <- 100
-length_tag <- tapply(methowSH$length_tag, 
-                     list(smolt_age = methowSH$smolt_age, release_year = methowSH$release_year), 
+dat <- subset(methowSH, !is.na(length_rel) | release_year=="2010")
+length_tag <- tapply(dat$length_tag, 
+                     list(smolt_age = dat$smolt_age, release_year = dat$release_year), 
                      function(x) seq(min(x, na.rm = TRUE), max(x, na.rm = TRUE), length.out = npts))
 newdata <- expand.grid(smolt_age = dimnames(length_tag)$smolt_age,
                        release_year = dimnames(length_tag)$release_year)
 newdata <- data.frame(newdata[rep(1:nrow(newdata), each = npts),],
                       length_tag = unlist(length_tag))
-fit <- predict(mod, newdata = newdata, allow_new_levels = TRUE, robust = TRUE, summary = TRUE)
-newdata <- data.frame(newdata, length_rel = exp(fit[,"Estimate"]), 
-                      length_rel_L = exp(fit[,"Q2.5"]), length_rel_U = exp(fit[,"Q97.5"]))
+pred <- predict(mod, newdata = newdata, se.fit = TRUE)
+newdata <- data.frame(newdata, length_rel = exp(pred$fit), 
+                      length_rel_L = exp(pred$fit - 2*pred$se.fit), 
+                      length_rel_U = exp(pred$fit + 2*pred$se.fit))
 
 dev.new(width = 10, height = 7)
 ggplot(methowSHsize, aes(x = length_tag, y = length_rel, shape = smolt_age, color = smolt_age)) + 
   geom_ribbon(aes(x = length_tag, ymin = length_rel_L, ymax = length_rel_U, fill = smolt_age),
               data = newdata, linetype = 0, alpha = 0.8) +
   geom_line(aes(x = length_tag, y = length_rel, color = smolt_age), lwd = 0.8, data = newdata) +
-  geom_point(size = 1.2) + scale_shape_manual(values = c(1,1)) + 
-  scale_color_manual(values = c("darkgray","black")) + #scale_x_log10() + scale_y_log10() +
+  geom_point(size = 1, alpha = 0.4) + scale_shape_manual(values = c(1,1)) + 
+  scale_color_manual(values = c("darkgray","black")) + 
+  scale_x_log10() + scale_y_log10() +
   scale_fill_manual(values = c("lightgray","darkgray")) + 
   labs(x = "Length at tagging (cm)", y = "Length at release (cm)") + 
   theme(axis.title = element_text(size = rel(4)), axis.ticks = element_text(size = rel(3)),
         legend.text = element_text(size = rel(4)), strip.text = element_text(size = rel(10)),
         panel.grid = element_blank()) + theme_bw() + facet_wrap(~ release_year)
 
-rm(list = c("npts","mod","fit","length_tag","newdata"))
+rm(list = c("npts","mod","pred","length_tag","newdata"))
 
 
 #------------------------
