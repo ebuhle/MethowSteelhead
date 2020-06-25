@@ -151,13 +151,12 @@ smolt_age <- scale(as.numeric(methowSHm$smolt_age), scale=F)
 adult_age <- na.replace(scale(methowSHm$adult_age, scale = F), 0)  # arbitrary NA value
 
 
-#------------------------------------------------------------------------------
-# GAM GROWTH MODELS
+#---------------------------------------------------------------------------------
+# HGAM GROWTH MODELS
 # Predict smolt length at release from length at tagging,
-# grouped by release year 
-# (Model GS: global trend plus year-specific smoothers with a global penalty)
-#------------------------------------------------------------------------------
-
+# grouped by smolt age and release year 
+# (Model S: smolt age- and release year-specific smoothers with a global penalty)
+#---------------------------------------------------------------------------------
 
 hgam_length <- gam(log(length_rel) ~ s(length_tag, smolt_age, bs = "fs", k = 5, m = 2) + 
                      s(length_tag, release_year, bs = "fs", k = 5, m = 2),
