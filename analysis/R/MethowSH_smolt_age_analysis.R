@@ -150,6 +150,15 @@ group_p <- cbind(matrix(rep(release_year, 3), ncol = 3), matrix(rep(return_year,
 smolt_age <- scale(as.numeric(methowSHm$smolt_age), scale=F)
 adult_age <- na.replace(scale(methowSHm$adult_age, scale = F), 0)  # arbitrary NA value
 
+# Predict missing release lengths from HGAM
+# (predictions are posterior medians)
+if(exists(hgam_length))
+{
+  log_length_rel_pred <- predict(hgam_length, newdata = methowSH, se.fit = TRUE)
+  length_rel_fill <- ifelse(!is.na(methowSH$length_rel), methowSH$length_rel, 
+                            exp(log_length_rel_pred$fit))
+}
+
 
 #---------------------------------------------------------------------------------
 # HGAM GROWTH MODELS
@@ -170,6 +179,8 @@ summary(hgam_length)
 # BINOMIAL (BERNOULLI) GLMMs FOR OCEAN AGE
 # Condition on survival to adulthood (and detection)
 # Predict ocean age given smolt age, grouped by release year
+# Models including release length are exploratory. Note that
+# they use a subset of the full data, b/c of missing values
 #--------------------------------------------------------------
 
 # Null model
@@ -210,6 +221,54 @@ fit_oa1b <- stan_glmer(ocean_age ~ smolt_age + (smolt_age_num || release_year),
                        chains = 4, iter = 2000, warmup = 1000, cores = 4)
 
 summary(fit_oa1b)
+
+
+# ocean_age ~ smolt_age + length_rel
+# Intercept varies by release year
+fit_oa2a <- stan_glmer(ocean_age ~ smolt_age + length_rel_fill + (1 | release_year), 
+                       data = cbind(methowSH, length_rel_fill = scale(length_rel_fill)),
+                       family = binomial("logit"),
+                       prior = normal(0,3),
+                       prior_intercept = normal(0,1.5), 
+                       prior_covariance = decov(),
+                       chains = 4, iter = 2000, warmup = 1000, cores = 4)
+
+summary(fit_oa2a)
+
+
+# ocean_age ~ smolt_age + length_rel
+# Intercept, smolt_age and length effect all vary by release year, but are uncorrelated
+# (Note that the uncorrelated specification entails tricking the formula parser
+# into treating smolt_age as a binary 0/1 numeric variable)
+fit_oa2b <- stan_glmer(ocean_age ~ smolt_age + length_rel_fill + 
+                         (smolt_age_num + length_rel_fill || release_year), 
+                       data = cbind(methowSH, length_rel_fill = scale(length_rel_fill),
+                                    smolt_age_num = as.numeric(methowSH$smolt_age)),
+                       family = binomial("logit"),
+                       prior = normal(0,3),
+                       prior_intercept = normal(0,1.5), 
+                       prior_covariance = decov(),
+                       chains = 4, iter = 2000, warmup = 1000, cores = 4)
+
+summary(fit_oa2b)
+
+
+# ocean_age ~ smolt_age * length_rel
+# Intercept, smolt_age and length main effects vary by release year, 
+# but are uncorrelated (interaction term is time-invariant)
+# (Note that the uncorrelated specification entails tricking the formula parser
+# into treating smolt_age as a binary 0/1 numeric variable)
+fit_oa2c <- stan_glmer(ocean_age ~ smolt_age * length_rel_fill + 
+                         (smolt_age_num + length_rel_fill || release_year), 
+                       data = cbind(methowSH, length_rel_fill = scale(length_rel_fill),
+                                    smolt_age_num = as.numeric(methowSH$smolt_age)),
+                       family = binomial("logit"),
+                       prior = normal(0,3),
+                       prior_intercept = normal(0,1.5), 
+                       prior_covariance = decov(),
+                       chains = 4, iter = 2000, warmup = 1000, cores = 4)
+
+summary(fit_oa2c)
 
 
 # Model selection
