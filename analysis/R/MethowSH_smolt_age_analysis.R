@@ -152,7 +152,7 @@ adult_age <- na.replace(scale(methowSHm$adult_age, scale = F), 0)  # arbitrary N
 
 # Predict missing release lengths from HGAM
 # (predictions are posterior medians)
-if(exists(hgam_length))
+if(exists("hgam_length"))
 {
   log_length_rel_pred <- predict(hgam_length, newdata = methowSH, se.fit = TRUE)
   length_rel_fill <- ifelse(!is.na(methowSH$length_rel), methowSH$length_rel, 
@@ -192,7 +192,7 @@ fit_oa0 <- stan_glmer(ocean_age ~ 1 | release_year,
                       prior_covariance = decov(),
                       chains = 4, iter = 2000, warmup = 1000, cores = 4)
 
-summary(fit_oa0)
+summary(fit_oa0, probs = c(0.05,0.5,0.95))
 
 
 # ocean_age ~ smolt_age
@@ -205,7 +205,7 @@ fit_oa1a <- stan_glmer(ocean_age ~ smolt_age + (1 | release_year),
                       prior_covariance = decov(),
                       chains = 4, iter = 2000, warmup = 1000, cores = 4)
 
-summary(fit_oa1a)
+summary(fit_oa1a, probs = c(0.05,0.5,0.95))
 
 
 # ocean_age ~ smolt_age
@@ -220,7 +220,7 @@ fit_oa1b <- stan_glmer(ocean_age ~ smolt_age + (smolt_age_num || release_year),
                        prior_covariance = decov(),
                        chains = 4, iter = 2000, warmup = 1000, cores = 4)
 
-summary(fit_oa1b)
+summary(fit_oa1b, probs = c(0.05,0.5,0.95))
 
 
 # ocean_age ~ smolt_age + length_rel
@@ -233,7 +233,7 @@ fit_oa2a <- stan_glmer(ocean_age ~ smolt_age + length_rel_fill + (1 | release_ye
                        prior_covariance = decov(),
                        chains = 4, iter = 2000, warmup = 1000, cores = 4)
 
-summary(fit_oa2a)
+summary(fit_oa2a, probs = c(0.05,0.5,0.95))
 
 
 # ocean_age ~ smolt_age + length_rel
@@ -250,7 +250,7 @@ fit_oa2b <- stan_glmer(ocean_age ~ smolt_age + length_rel_fill +
                        prior_covariance = decov(),
                        chains = 4, iter = 2000, warmup = 1000, cores = 4)
 
-summary(fit_oa2b)
+summary(fit_oa2b, probs = c(0.05,0.5,0.95))
 
 
 # ocean_age ~ smolt_age * length_rel
@@ -268,7 +268,7 @@ fit_oa2c <- stan_glmer(ocean_age ~ smolt_age * length_rel_fill +
                        prior_covariance = decov(),
                        chains = 4, iter = 2000, warmup = 1000, cores = 4)
 
-summary(fit_oa2c)
+summary(fit_oa2c, probs = c(0.05,0.5,0.95))
 
 
 # Model selection
@@ -471,7 +471,7 @@ print(tab2, digits = 2)
 
 #-------------------------------------
 # Length at release vs. tagging
-# Show fit of parabolic growth model
+# Show fit of growth model
 #-------------------------------------
 
 mod <- hgam_length
@@ -489,19 +489,20 @@ newdata <- data.frame(newdata, length_rel = exp(pred$fit),
                       length_rel_L = exp(pred$fit - 2*pred$se.fit), 
                       length_rel_U = exp(pred$fit + 2*pred$se.fit))
 
-dev.new(width = 10, height = 7)
+# dev.new(width = 10, height = 7)
+png(filename=here("analysis","results","length_tag_rel.png"), width=10, height=7, units="in", res=300, type="cairo-png")
 ggplot(methowSHsize, aes(x = length_tag, y = length_rel, shape = smolt_age, color = smolt_age)) + 
-  geom_ribbon(aes(x = length_tag, ymin = length_rel_L, ymax = length_rel_U, fill = smolt_age),
-              data = newdata, linetype = 0, alpha = 0.8) +
-  geom_line(aes(x = length_tag, y = length_rel, color = smolt_age), lwd = 0.8, data = newdata) +
-  geom_point(size = 1, alpha = 0.4) + scale_shape_manual(values = c(1,1)) + 
+  scale_y_log10() + labs(x = "Length at tagging (cm)", y = "Length at release (cm)") + 
+  geom_point(size = 0.5, alpha = 0.5) + scale_shape_manual(values = c(1,1)) + 
+  # geom_ribbon(aes(x = length_tag, ymin = length_rel_L, ymax = length_rel_U, fill = smolt_age),
+  #             data = newdata, linetype = 0, alpha = 0.8) +
+  # geom_line(aes(x = length_tag, y = length_rel, color = smolt_age), lwd = 0.8, data = newdata) +
   scale_color_manual(values = c("darkgray","black")) + 
-  scale_x_log10() + scale_y_log10() +
   scale_fill_manual(values = c("lightgray","darkgray")) + 
-  labs(x = "Length at tagging (cm)", y = "Length at release (cm)") + 
   theme(axis.title = element_text(size = rel(4)), axis.ticks = element_text(size = rel(3)),
         legend.text = element_text(size = rel(4)), strip.text = element_text(size = rel(10)),
-        panel.grid = element_blank()) + theme_bw() + facet_wrap(~ release_year)
+        panel.grid = element_blank()) + theme_bw() + facet_wrap(~ release_year, scales = "free_x")
+dev.off()
 
 rm(list = c("npts","mod","pred","length_tag","newdata"))
 
@@ -522,8 +523,8 @@ p_samp <- rbinom(length(p_hat), prob = p_hat, size = rep(n, each = nrow(p_hat)))
 p_samp <- sweep(matrix(p_samp, nrow(p_hat), ncol(p_hat)), 2, n, "/")
 ry <- methowSHoa$release_year + ifelse(methowSHoa$smolt_age=="S1", -0.15, 0.15) 
 
-dev.new()
-# png(filename=here("analysis","results","pp_ocean_age.png"), width=7, height=7, units="in", res=300, type="cairo-png")
+# dev.new()
+png(filename=here("analysis","results","pp_ocean_age.png"), width=7, height=7, units="in", res=300, type="cairo-png")
 plot(ry, methowSHoa$oa2plus/n, pch = "", ylim = c(0,1), yaxs = "i",
      xlab = "Release year", ylab = "Proportion returning at ocean age 2+",
      main = "Data and posterior predictive distribution",
@@ -537,7 +538,7 @@ text(unique(round(ry)), 0.01, adj = c(0.5,0),
      labels = rowSums(matrix(n, ncol = 2, byrow = TRUE)))
 legend("topleft", c("1","2"), title = "Smolt age", pch = 16, cex = 1.2, lty = 1,
        col = c("darkgray","black"))
-# dev.off()
+dev.off()
 
 
 # Fitted values and sample estimates (proportion OA 2+) by year
