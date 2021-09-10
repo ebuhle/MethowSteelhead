@@ -31,6 +31,8 @@
 #===============================================================
 
 options(device = windows)
+library(dplyr)
+library(tidyr)
 library(lubridate)
 library(here)
 library(gtools)
@@ -41,7 +43,7 @@ source(here("analysis","R","vioplot2.R"))
 library(yarrr)
 library(rstan)
 library(rstanarm)
-library(mgcv)
+library(brms)
 library(loo)
 library(shinystan)
 source(here("analysis","R","extract1.R"))
@@ -112,7 +114,8 @@ methowSHoa <- cbind(t(sapply(strsplit(row.names(methowSHoa), "_"), identity)),
                          methowSHoa)
 names(methowSHoa) <- c("release_year","smolt_age","oa1","oa2plus","mort")
 methowSHoa$release_year <- as.numeric(as.character(methowSHoa$release_year))
-methowSHoa <- data.frame(methowSHoa[,1:2], smolt_age_num = as.numeric(methowSHoa$smolt_age),
+methowSHoa <- data.frame(methowSHoa[,1:2], 
+                         smolt_age_num = as.numeric(factor(methowSHoa$smolt_age)),
                          methowSHoa[,3:5])
 row.names(methowSHoa) <- NULL
 
@@ -150,29 +153,48 @@ group_p <- cbind(matrix(rep(release_year, 3), ncol = 3), matrix(rep(return_year,
 smolt_age <- scale(as.numeric(methowSHm$smolt_age), scale=F)
 adult_age <- na.replace(scale(methowSHm$adult_age, scale = F), 0)  # arbitrary NA value
 
-# Predict missing release lengths from HGAM
-# (predictions are posterior medians)
-if(exists("hgam_length"))
-{
-  log_length_rel_pred <- predict(hgam_length, newdata = methowSH, se.fit = TRUE)
-  length_rel_fill <- ifelse(!is.na(methowSH$length_rel), methowSH$length_rel, 
-                            exp(log_length_rel_pred$fit))
-}
+# # Predict missing release lengths from hierarchical change-point models
+# # (predictions are posterior medians)
+# if(exists("hgam_length"))
+# {
+#   log_length_rel_pred <- predict(hgam_length, newdata = methowSH, se.fit = TRUE)
+#   length_rel_fill <- ifelse(!is.na(methowSH$length_rel), methowSH$length_rel, 
+#                             exp(log_length_rel_pred$fit))
+# }
 
 
 #---------------------------------------------------------------------------------
-# HGAM GROWTH MODELS
+# RANDOM CHANGE POINT GROWTH MODELS
 # Predict smolt length at release from length at tagging,
-# grouped by smolt age and release year 
-# (Model S: smolt age- and release year-specific smoothers with a global penalty)
+# grouped by release year 
+# Separate models for S1 and S2
 #---------------------------------------------------------------------------------
 
-hgam_length <- gam(log(length_rel) ~ s(length_tag, smolt_age, bs = "fs", k = 5, m = 2) + 
-                     s(length_tag, release_year, bs = "fs", k = 5, m = 2),
-                   data = methowSH, na.action = na.omit, drop.unused.levels = FALSE,
-                   method = "ML")
+# S1
+brm_length_S1 <- brm(bf(length_rel ~ b0 + b1*(length_tag - b3)*step(b3 - length_tag) + 
+                          b2*(length_tag - b3)*step(length_tag - b3),
+                        b0 + b1 + b2 + b3 ~ (1 | release_year), nl = TRUE),
+                     data = subset(methowSH, smolt_age == "S1"), 
+                     prior = c(prior(normal(15,5), nlpar = "b0", lb = 0),
+                               prior(normal(5,5), nlpar = "b1", lb = 0),
+                               prior(normal(2,5), nlpar = "b2", lb = 0),
+                               prior(normal(5,5), nlpar = "b3", lb = 0)),
+                     chains = 3, iter = 2000, warmup = 1000, cores = 3)
 
-summary(hgam_length)
+summary(brm_length_S1)
+
+# S2
+brm_length_S2 <- brm(bf(length_rel ~ b0 + b1*(length_tag - b3)*step(b3 - length_tag) + 
+                          b2*(length_tag - b3)*step(length_tag - b3),
+                        b0 + b1 + b2 + b3 ~ (1 | release_year), nl = TRUE),
+                     data = subset(methowSH, smolt_age == "S2"), 
+                     prior = c(prior(normal(15,5), nlpar = "b0", lb = 0),
+                               prior(normal(5,5), nlpar = "b1", lb = 0),
+                               prior(normal(2,5), nlpar = "b2", lb = 0),
+                               prior(normal(5,5), nlpar = "b3", lb = 0)),
+                     chains = 3, iter = 2000, warmup = 1000, cores = 3)
+
+summary(brm_length_S2)
 
 
 #--------------------------------------------------------------
@@ -441,7 +463,7 @@ compair_cjs
 # Save workspace (only the stanfit objects)
 #---------------------------------------------
 
-save(list = ls()[substring(ls(),1,4) %in% c("cjs_","fit_","hgam")], 
+save(list = ls()[substring(ls(),1,4) %in% c("cjs_","fit_","brm_")], 
      file = here("analysis","results","MethowSH_stanfit.RData"))
 
 
@@ -489,10 +511,10 @@ newdata <- data.frame(newdata, length_rel = exp(pred$fit),
                       length_rel_L = exp(pred$fit - 2*pred$se.fit), 
                       length_rel_U = exp(pred$fit + 2*pred$se.fit))
 
-# dev.new(width = 10, height = 7)
-png(filename=here("analysis","results","length_tag_rel.png"), width=10, height=7, units="in", res=300, type="cairo-png")
+dev.new(width = 10, height = 7)
+# png(filename=here("analysis","results","length_tag_rel.png"), width=10, height=7, units="in", res=300, type="cairo-png")
 ggplot(methowSHsize, aes(x = length_tag, y = length_rel, shape = smolt_age, color = smolt_age)) + 
-  scale_y_log10() + labs(x = "Length at tagging (cm)", y = "Length at release (cm)") + 
+  labs(x = "Length at tagging (cm)", y = "Length at release (cm)") + 
   geom_point(size = 0.5, alpha = 0.5) + scale_shape_manual(values = c(1,1)) + 
   # geom_ribbon(aes(x = length_tag, ymin = length_rel_L, ymax = length_rel_U, fill = smolt_age),
   #             data = newdata, linetype = 0, alpha = 0.8) +
@@ -502,7 +524,7 @@ ggplot(methowSHsize, aes(x = length_tag, y = length_rel, shape = smolt_age, colo
   theme(axis.title = element_text(size = rel(4)), axis.ticks = element_text(size = rel(3)),
         legend.text = element_text(size = rel(4)), strip.text = element_text(size = rel(10)),
         panel.grid = element_blank()) + theme_bw() + facet_wrap(~ release_year, scales = "free_x")
-dev.off()
+# dev.off()
 
 rm(list = c("npts","mod","pred","length_tag","newdata"))
 
