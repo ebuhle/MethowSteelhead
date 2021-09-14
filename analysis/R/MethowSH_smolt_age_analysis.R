@@ -513,30 +513,6 @@ print(tab2, digits = 2)
 # Show fit of growth model
 #-------------------------------------
 
-npts <- 100
-dat <- filter(methowSH, !is.na(length_rel) | release_year=="2010")
-length_tag <- tapply(dat$length_tag, 
-                     list(smolt_age = dat$smolt_age, release_year = dat$release_year), 
-                     function(x) seq(min(x, na.rm = TRUE), max(x, na.rm = TRUE), length.out = npts))
-newdata <- expand.grid(smolt_age = dimnames(length_tag)$smolt_age,
-                       release_year = dimnames(length_tag)$release_year)
-newdata <- data.frame(newdata[rep(1:nrow(newdata), each = npts),], length_tag = unlist(length_tag))
-fit_S1 <- fitted(brm_length_S1, newdata = filter(newdata, smolt_age == "S1"), 
-                  allow_new_levels = TRUE, sample_new_levels = "gaussian")
-pred_S1 <- predict(brm_length_S1, newdata = filter(newdata, smolt_age == "S1"), 
-                  allow_new_levels = TRUE, sample_new_levels = "gaussian")
-fit_S2 <- fitted(brm_length_S2, newdata = filter(newdata, smolt_age == "S2"), 
-                 allow_new_levels = TRUE, sample_new_levels = "gaussian")
-pred_S2 <- predict(brm_length_S2, newdata = filter(newdata, smolt_age == "S2"), 
-                   allow_new_levels = TRUE, sample_new_levels = "gaussian")
-newdata
-  mutate(fit = ifelse(smolt_age == "S1", fit_S1[,"Estimate"], fit_S2[,"Estimate"]),
-         fit_L = ifelse(smolt_age == "S1", fit_S1[,"Q2.5"], fit_S2[,"Q2.5"]),
-         fit_U = ifelse(smolt_age == "S1", fit_S1[,"Q97.5"], fit_S2[,"Q97.5"]),
-         pred_L = ifelse(smolt_age == "S1", pred_S1[,"Q2.5"], pred_S2[,"Q2.5"]),
-         pred_U = ifelse(smolt_age == "S1", pred_S1[,"Q97.5"], pred_S2[,"Q97.5"]))
-##
-  
 newdata <- methowSH %>% 
   filter(!is.na(length_rel) | release_year=="2010") %>% group_by(smolt_age, release_year) %>% 
   summarise(length_tag = seq(min(length_tag, na.rm = TRUE), max(length_tag, na.rm = TRUE), length = 100)) %>% 
@@ -559,7 +535,7 @@ newdata <- newdata %>% mutate(fit = c(fit_S1[,"Estimate"], fit_S2[,"Estimate"]),
 
 dev.new(width = 10, height = 7)
 # png(filename=here("analysis","results","length_tag_rel.png"), width=10, height=7, units="in", res=300, type="cairo-png")
-ggplot(methowSHsize, aes(x = length_tag, y = length_rel, shape = smolt_age, color = smolt_age)) + 
+ggplot(methowSH, aes(x = length_tag, y = length_rel, shape = smolt_age, color = smolt_age)) + 
   labs(x = "Length at tagging (cm)", y = "Length at release (cm)") + 
   geom_ribbon(aes(x = length_tag, ymin = pred_L, ymax = pred_U, fill = smolt_age),
               data = newdata, inherit.aes = FALSE, linetype = 0, alpha = 0.4) +
