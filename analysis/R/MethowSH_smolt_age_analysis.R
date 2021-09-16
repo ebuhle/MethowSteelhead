@@ -31,12 +31,11 @@
 #===============================================================
 
 options(device = windows)
+library(Hmisc)
+library(gtools)
 library(dplyr)
 library(tidyr)
 library(lubridate)
-library(here)
-library(gtools)
-library(Hmisc)
 library(matrixStats)
 library(vioplot)
 source(here("analysis","R","vioplot2.R"))
@@ -46,6 +45,7 @@ library(rstanarm)
 library(brms)
 library(loo)
 library(shinystan)
+library(here)
 source(here("analysis","R","extract1.R"))
 source(here("analysis","R","stan_mean.R"))
 source(here("analysis","R","sim_phi_tot.R"))
@@ -58,50 +58,33 @@ if(file.exists(here("analysis","results","MethowSH_stanfit.RData")))
 #-----------------
 
 # Read in capture history data (observations are dates)
-methowSH <- read.csv(here("data","methowSH.csv"), header = TRUE, stringsAsFactors = TRUE)
-for(i in 8:29)
-  methowSH[,i] <- as.Date(as.character(methowSH[,i]), "%m/%d/%Y")
+methowSH <- read.csv(here("data","methowSH.csv"), header = TRUE, stringsAsFactors = TRUE) %>% 
+  mutate(across(RRJ:BROOD, .fns = ~ year(as.Date(as.character(.x),  "%m/%d/%Y"))))
 
-# Read in size data, change unobserved values and "outliers" to NA,
-# and merge into capture history data by tag ID
-methowSHsize <- read.csv(here("data","methowSHsize.csv"), header = TRUE, stringsAsFactors = TRUE)
-methowSHsize$length_rel[methowSHsize$error==1 | methowSHsize$type != 0] <- NA
-methowSHsize[,c("length_rel","length_tag")] <- methowSHsize[,c("length_rel","length_tag")]/10 # convert to cm
-methowSH <- data.frame(methowSH[,1:4], 
-                       methowSHsize[match(methowSH$tag, methowSHsize$tag), c(2,6)],
-                       methowSH[,-(1:4)])
-
-# "Fix" return year and age at return
-
+# Fix return year and age at return
 # (1) Some tags were detected in adult ladders the same year they were released
-# (usually in April). Change those detections to NA.
-rty_test <- sweep(apply(methowSH[,15:31], 2, year), 1, methowSH$release_year, "==") 
-rty_indx <- which(rty_test & !is.na(rty_test), arr.ind = TRUE)
-rty_indx[,"col"] <- rty_indx[,"col"] + 14
-methowSH[rty_indx] <- NA
-
+#     (usually in April). Change those detections to NA.
 # (2) return_year and adult_age are missing for some  fish that did, in fact, return as adults. 
-# Fill in those missing values.
-rty <- apply(methowSH[,15:31], 1, function(x) ifelse(all(is.na(x)), NA, min(year(x), na.rm = T)))
-rty_NA <- !is.na(rty) & (is.na(methowSH$return_year) | is.na(methowSH$adult_age))
-methowSH$return_year[rty_NA] <- rty[rty_NA]
-methowSH$adult_age[rty_NA] <- methowSH$return_year[rty_NA] - methowSH$brood_year[rty_NA]
-
-# Convert dates to 0/1
-methowSH[,10:31] <- as.numeric(!is.na(methowSH[,10:31]))
+#     Fill in those missing values.
+# Then convert detection dates to 0/1
+methowSH <- methowSH %>% 
+  mutate(across(BOA:BROOD, .fns = ~ replace(.x, .x == release_year, NA)),
+         rty = apply(select(., BOA:BROOD), 1, function(x) ifelse(all(is.na(x)), NA, min(x, na.rm = TRUE))),
+         rty_NA = !is.na(rty) & (is.na(return_year) | is.na(adult_age)),
+         return_year = ifelse(rty_NA, rty, return_year),
+         adult_age = ifelse(rty_NA, return_year - brood_year, adult_age),
+         across(RRJ:BROOD, .fns = ~ as.numeric(!is.na(.x)))) %>% 
+  select(-c(rty, rty_NA))
 
 # Pool detections from MCJ:TWX (juvenile), TDA:WEA (adult), and MRC:BROOD (adult)
-methowSH <- cbind(methowSH[,1:8],
-                  ocean_age = factor(methowSH$return_year - methowSH$release_year),
-                  methowSH[,9:14],
-                  MCJTWX = as.numeric(apply(methowSH[,c("MCJ","JDJ","BON","TWX")] > 0, 1, any)),
-                  methowSH[,15:21],
-                  TDAWEA = as.numeric(apply(methowSH[,c("TDA","MCN","PRA","RIA","RRF","WEA")] > 0, 1, any)),
-                  methowSH[,22:31],
-                  MRCBRD = as.numeric(apply(methowSH[,c("MRC","MRT","MRW","SPRING","WFC","LOR","EWC","CRW","BROOD")] > 0, 1, any)))
+methowSH <- methowSH %>% 
+  mutate(ocean_age = factor(return_year - release_year), .after = adult_age) %>%
+  mutate(brood_year = factor(brood_year), release_year = factor(release_year)) %>% 
+  mutate(MCJTWX = as.numeric(apply(select(., MCJ:TWX) > 0, 1, any)), .after = TWX) %>% 
+  mutate(TDAWEA = as.numeric(apply(select(., TDA:WEA) > 0, 1, any)), .after = WEA) %>% 
+  mutate(MCRBRD = as.numeric(apply(select(., MRC:BROOD) > 0, 1, any)), .after = BROOD)
+
 levels(methowSH$ocean_age) <- c("1","2+","2+")  # very few 3-ocean; group with 2-ocean
-methowSH$brood_year <- factor(methowSH$brood_year)
-methowSH$release_year <- factor(methowSH$release_year)
 
 # Convert crosstabs of ocean age by release year and smolt age to data frame
 # for use in posterior predictive checking of binomial GLMMs
@@ -118,6 +101,16 @@ methowSHoa <- data.frame(methowSHoa[,1:2],
                          smolt_age_num = as.numeric(factor(methowSHoa$smolt_age)),
                          methowSHoa[,3:5])
 row.names(methowSHoa) <- NULL
+
+# Read in size data, change unobserved values and "outliers" to NA
+methowSHsize <- read.csv(here("data","methowSHsize.csv"), header = TRUE, stringsAsFactors = TRUE) %>% 
+  mutate(length_rel = replace(length_rel, error==1 | type != 0, NA),
+         across(starts_with("length"), .fns = ~ .x/10))  # convert to cm
+
+# Aggregate to unique (length_tag, length_rel) pairs for model fitting
+methowSHsm <- methowSHsize %>% filter(!is.na(length_tag) & !is.na(length_rel)) %>% 
+  group_by(smolt_age, release_year, length_tag, length_rel) %>% 
+  summarize(n = n()) %>% as.data.frame()
 
 # Convert to aggregated array format, including the covariates (some redundant):
 # smolt_age, brood_year, release_year, return_year, adult_age, adult_age_factor
@@ -188,30 +181,32 @@ if(exists("brm_length_S2")) {
 #---------------------------------------------------------------------------------
 
 # S1
-brm_length_S1 <- brm(bf(length_rel ~ b0 + b1*(length_tag - b3)*step(b3 - length_tag) + 
+fit_length_S1 <- brm(bf(length_rel | weights(n) ~ b0 + b1*(length_tag - b3)*step(b3 - length_tag) + 
                           b2*(length_tag - b3)*step(length_tag - b3),
                         b0 + b1 + b2 + b3 ~ (1 | release_year), nl = TRUE),
-                     data = subset(methowSH, smolt_age == "S1"), 
+                     data = subset(methowSHsm, smolt_age == "S1"), 
                      prior = c(prior(normal(15,5), nlpar = "b0", lb = 0),
                                prior(normal(5,5), nlpar = "b1", lb = 0),
                                prior(normal(2,5), nlpar = "b2", lb = 0),
                                prior(normal(5,5), nlpar = "b3", lb = 0)),
-                     chains = 3, iter = 2000, warmup = 1000, cores = 3)
+                     chains = 3, iter = 2000, warmup = 1000, cores = 3,
+                     control = list(adapt_delta = 0.9, max_treedepth = 12))
 
-summary(brm_length_S1)
+summary(fit_length_S1)
 
 # S2
-brm_length_S2 <- brm(bf(length_rel ~ b0 + b1*(length_tag - b3)*step(b3 - length_tag) + 
+fit_length_S2 <- brm(bf(length_rel | weights(n) ~ b0 + b1*(length_tag - b3)*step(b3 - length_tag) + 
                           b2*(length_tag - b3)*step(length_tag - b3),
                         b0 + b1 + b2 + b3 ~ (1 | release_year), nl = TRUE),
-                     data = subset(methowSH, smolt_age == "S2"), 
+                     data = subset(methowSHsm, smolt_age == "S2"), 
                      prior = c(prior(normal(15,5), nlpar = "b0", lb = 0),
                                prior(normal(5,5), nlpar = "b1", lb = 0),
                                prior(normal(2,5), nlpar = "b2", lb = 0),
                                prior(normal(5,5), nlpar = "b3", lb = 0)),
-                     chains = 3, iter = 2000, warmup = 1000, cores = 3)
+                     chains = 3, iter = 2000, warmup = 1000, cores = 3,
+                     control = list(adapt_delta = 0.9, max_treedepth = 12))
 
-summary(brm_length_S2)
+summary(fit_length_S2)
 
 
 #--------------------------------------------------------------
@@ -480,7 +475,7 @@ compair_cjs
 # Save workspace (only the stanfit objects)
 #---------------------------------------------
 
-save(list = ls()[substring(ls(),1,4) %in% c("cjs_","fit_","brm_")], 
+save(list = ls()[substring(ls(),1,4) %in% c("cjs_","fit_")], 
      file = here("analysis","results","MethowSH_stanfit.RData"))
 
 
@@ -513,18 +508,18 @@ print(tab2, digits = 2)
 # Show fit of growth model
 #-------------------------------------
 
-newdata <- methowSH %>% 
+newdata <- methowSHsize %>% 
   filter(!is.na(length_rel) | release_year=="2010") %>% group_by(smolt_age, release_year) %>% 
   summarise(length_tag = seq(min(length_tag, na.rm = TRUE), max(length_tag, na.rm = TRUE), length = 100)) %>% 
   as.data.frame()
 
-fit_S1 <- fitted(brm_length_S1, newdata = filter(newdata, smolt_age == "S1"), 
+fit_S1 <- fitted(fit_length_S1, newdata = filter(newdata, smolt_age == "S1"), 
                  allow_new_levels = TRUE, sample_new_levels = "gaussian")
-pred_S1 <- predict(brm_length_S1, newdata = filter(newdata, smolt_age == "S1"), 
+pred_S1 <- predict(fit_length_S1, newdata = filter(newdata, smolt_age == "S1"), 
                    allow_new_levels = TRUE, sample_new_levels = "gaussian")
-fit_S2 <- fitted(brm_length_S2, newdata = filter(newdata, smolt_age == "S2"), 
+fit_S2 <- fitted(fit_length_S2, newdata = filter(newdata, smolt_age == "S2"), 
                  allow_new_levels = TRUE, sample_new_levels = "gaussian")
-pred_S2 <- predict(brm_length_S2, newdata = filter(newdata, smolt_age == "S2"), 
+pred_S2 <- predict(fit_length_S2, newdata = filter(newdata, smolt_age == "S2"), 
                    allow_new_levels = TRUE, sample_new_levels = "gaussian")
 
 newdata <- newdata %>% mutate(fit = c(fit_S1[,"Estimate"], fit_S2[,"Estimate"]),
@@ -535,7 +530,7 @@ newdata <- newdata %>% mutate(fit = c(fit_S1[,"Estimate"], fit_S2[,"Estimate"]),
 
 dev.new(width = 10, height = 7)
 # png(filename=here("analysis","results","length_tag_rel.png"), width=10, height=7, units="in", res=300, type="cairo-png")
-ggplot(methowSH, aes(x = length_tag, y = length_rel, shape = smolt_age, color = smolt_age)) + 
+ggplot(methowSHsize, aes(x = length_tag, y = length_rel, shape = smolt_age, color = smolt_age)) + 
   labs(x = "Length at tagging (cm)", y = "Length at release (cm)") + 
   geom_ribbon(aes(x = length_tag, ymin = pred_L, ymax = pred_U, fill = smolt_age),
               data = newdata, inherit.aes = FALSE, linetype = 0, alpha = 0.4) +
