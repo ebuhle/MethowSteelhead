@@ -68,8 +68,8 @@ methowSH <- read.csv(here("data","methowSH.csv"), header = TRUE, stringsAsFactor
 #     Fill in those missing values.
 # Then convert detection dates to 0/1
 methowSH <- methowSH %>% 
-  mutate(across(BOA:BROOD, .fns = ~ replace(.x, .x == release_year, NA)),
-         rty = apply(select(., BOA:BROOD), 1, function(x) ifelse(all(is.na(x)), NA, min(x, na.rm = TRUE))),
+  mutate(across(BOA:BROOD, .fns = ~ replace(.x, .x == release_year, NA))) %>% 
+  mutate(rty = apply(select(., BOA:BROOD), 1, function(x) ifelse(all(is.na(x)), NA, min(x, na.rm = TRUE))),
          rty_NA = !is.na(rty) & (is.na(return_year) | is.na(adult_age)),
          return_year = ifelse(rty_NA, rty, return_year),
          adult_age = ifelse(rty_NA, return_year - brood_year, adult_age),
@@ -82,7 +82,7 @@ methowSH <- methowSH %>%
   mutate(brood_year = factor(brood_year), release_year = factor(release_year)) %>% 
   mutate(MCJTWX = as.numeric(apply(select(., MCJ:TWX) > 0, 1, any)), .after = TWX) %>% 
   mutate(TDAWEA = as.numeric(apply(select(., TDA:WEA) > 0, 1, any)), .after = WEA) %>% 
-  mutate(MCRBRD = as.numeric(apply(select(., MRC:BROOD) > 0, 1, any)), .after = BROOD)
+  mutate(MRCBRD = as.numeric(apply(select(., MRC:BROOD) > 0, 1, any)), .after = BROOD)
 
 levels(methowSH$ocean_age) <- c("1","2+","2+")  # very few 3-ocean; group with 2-ocean
 
@@ -108,6 +108,7 @@ methowSHsize <- read.csv(here("data","methowSHsize.csv"), header = TRUE, strings
          across(starts_with("length"), .fns = ~ .x/10))  # convert to cm
 
 # Aggregate to unique (length_tag, length_rel) pairs for model fitting
+# Omit fish with both measurements missing
 methowSHsm <- methowSHsize %>% filter(!is.na(length_tag) & !is.na(length_rel)) %>% 
   group_by(smolt_age, release_year, length_tag, length_rel) %>% 
   summarize(n = n()) %>% as.data.frame()
@@ -115,18 +116,13 @@ methowSHsm <- methowSHsize %>% filter(!is.na(length_tag) & !is.na(length_rel)) %
 # Convert to aggregated array format, including the covariates (some redundant):
 # smolt_age, brood_year, release_year, return_year, adult_age, adult_age_factor
 # (which combines 4 and 5 and arbitrarily fills NAs)
-methowSHm <- cbind(methowSH[,1:4], 
-                   return_year = factor(methowSH$return_year, exclude = NULL),
-                   adult_age = factor(methowSH$adult_age, exclude = NULL),
-                   adult_age_factor = factor(methowSH$adult_age, exclude = NULL),
-                   methowSH[,c("WNFH","RRJ","MCJTWX","BOA", "TDAWEA","LMR","MRCBRD")])
+methowSHm <- methowSH %>% 
+  group_by(smolt_age, brood_year, release_year, length_NA, length_rel, return_year, adult_age,
+           WNFH, RRJ, MCJTWX, BOA, TDAWEA, LMR, MRCBRD) %>% 
+  summarize(n = n()) %>% as.data.frame() %>% 
+  mutate(adult_age_factor = factor(adult_age, exclude = NULL), .after = adult_age)
+
 levels(methowSHm$adult_age_factor) <- c("2","3","4+","4+","2")
-methowSHm <- aggregate(tag ~ smolt_age + brood_year + release_year + return_year + adult_age + adult_age_factor +
-                         WNFH + RRJ + MCJTWX + BOA + TDAWEA + LMR + MRCBRD,
-                       data = methowSHm, length)
-names(methowSHm)[names(methowSHm)=="tag"] <- "n"
-methowSHm$return_year <- as.numeric(as.character(methowSHm$return_year))
-methowSHm$adult_age <- as.numeric(as.character(methowSHm$adult_age))
 
 # Year indices as grouping variables for phi and p random effects
 # Replace NA return years with arbitrary index that will not enter into the likelihood
