@@ -1,5 +1,5 @@
-# Cormack-Jolly-Seber Model (aggregated array data format) with random effects on time-specific 
-# survival and capture probabilities (possibly different grouping variables for each phi and p)
+// Cormack-Jolly-Seber Model (aggregated array data format) with random effects on time-specific 
+// survival and capture probabilities (possibly different grouping variables for each phi and p)
 
 functions {
   int first_capture(int[] y_i) {
@@ -37,20 +37,20 @@ functions {
 }
 
 data {
-  int<lower=2> T;                  # number of capture events (includes marking)
-  int<lower=0> M;                  # number of unique capture histories
-  int<lower=1> group_phi[M,T-1];   # phi group IDs for each unique capture history
-  int<lower=1> group_p[M,T];       # p group IDs for each unique capture history
-  int<lower=0,upper=1> y[M,T];     # y[m,t]: history m captured at t
-  int<lower=1> n[M];               # n[m]: number of individuals with capture history y[m,]
+  int<lower=2> T;                  // number of capture events (includes marking)
+  int<lower=0> M;                  // number of unique capture histories
+  int<lower=1> group_phi[M,T-1];   // phi group IDs for each unique capture history
+  int<lower=1> group_p[M,T];       // p group IDs for each unique capture history
+  int<lower=0,upper=1> y[M,T];     // y[m,t]: history m captured at t
+  int<lower=1> n[M];               // n[m]: number of individuals with capture history y[m,]
 }
 
 transformed data {
-  int<lower=1> J_phi;              # number of groups for phi
-  int<lower=1> J_p;                # number of groups for p
-  int<lower=0,upper=T> first[M];   # first capture occasion
-  int<lower=0,upper=T> last[M];    # last capture occasion
-  int<lower=0,upper=T-1> last_minus_first[M];  # duh
+  int<lower=1> J_phi;              // number of groups for phi
+  int<lower=1> J_p;                // number of groups for p
+  int<lower=0,upper=T> first[M];   // first capture occasion
+  int<lower=0,upper=T> last[M];    // last capture occasion
+  int<lower=0,upper=T-1> last_minus_first[M];  // duh
   
   J_phi = max(to_array_1d(group_phi));
   J_p = max(to_array_1d(group_p));
@@ -64,18 +64,18 @@ transformed data {
 }
 
 parameters {
-  vector<lower=0,upper=1>[T-1] mu_phi;  # inverse logit of mean(logit(phi[,t]))
-  vector<lower=0>[T-1] sigma_phi;       # among-group SDs of logit(phi[,t])
-  matrix[J_phi,T-1] logit_phi_z;        # group-specific random effects on phi (z-scores)
-  vector<lower=0,upper=1>[T] mu_p;      # inverse logit of mean(logit(p[,t]))
-  vector<lower=0>[T] sigma_p;           # among-group SDs of logit(p[,t])
-  matrix[J_p,T] logit_p_z;              # group-specific random effects on p (z-scores)
+  vector<lower=0,upper=1>[T-1] mu_phi;  // inverse logit of mean(logit(phi[,t]))
+  vector<lower=0>[T-1] sigma_phi;       // among-group SDs of logit(phi[,t])
+  matrix[J_phi,T-1] logit_phi_z;        // group-specific random effects on phi (z-scores)
+  vector<lower=0,upper=1>[T] mu_p;      // inverse logit of mean(logit(p[,t]))
+  vector<lower=0>[T] sigma_p;           // among-group SDs of logit(p[,t])
+  matrix[J_p,T] logit_p_z;              // group-specific random effects on p (z-scores)
 }
 
 transformed parameters {
-  matrix<lower=0,upper=1>[M,T-1] phi_m;  # phi[,t]: Pr[alive at t + 1 | alive at t]
-  matrix<lower=0,upper=1>[M,T] p_m;      # p[,t]: Pr[captured at t] (note p[,1] not used in model)
-  matrix<lower=0,upper=1>[M,T] chi;      # chi[,t]: Pr[not captured >  t | alive at t]
+  matrix<lower=0,upper=1>[M,T-1] phi_m;  // phi[,t]: Pr[alive at t + 1 | alive at t]
+  matrix<lower=0,upper=1>[M,T] p_m;      // p[,t]: Pr[captured at t] (note p[,1] not used in model)
+  matrix<lower=0,upper=1>[M,T] chi;      // chi[,t]: Pr[not captured >  t | alive at t]
   
   for(t in 1:(T-1))
     phi_m[,t] = inv_logit(logit(mu_phi[t]) + sigma_phi[t] * logit_phi_z[group_phi[,t],t]);
@@ -88,28 +88,28 @@ transformed parameters {
 }
 
 model {
-  # implied uniform priors:
-  # mu_phi ~ uniform(0,1)
-  # mu_p ~ uniform(0,1)
+  // implied uniform priors:
+  // mu_phi ~ uniform(0,1)
+  // mu_p ~ uniform(0,1)
   
-  sigma_phi ~ normal(0,5);    # weakly informative
-  to_vector(logit_phi_z) ~ normal(0,1);  # implies logit(phi[j,t]) ~ N(logit(mu_phi[t]), sigma_phi);
-  sigma_p ~ normal(0,5);      # weakly informative
-  to_vector(logit_p_z) ~ normal(0,1);    # implies logit(p[j,t]) ~ N(logit(mu_p[t]), sigma_p);
+  sigma_phi ~ normal(0,5);    // weakly informative
+  to_vector(logit_phi_z) ~ normal(0,1);  // implies logit(phi[j,t]) ~ N(logit(mu_phi[t]), sigma_phi);
+  sigma_p ~ normal(0,5);      // weakly informative
+  to_vector(logit_p_z) ~ normal(0,1);    // implies logit(p[j,t]) ~ N(logit(mu_p[t]), sigma_p);
   
-  # Likelihood of capture history
-  # marginalized over discrete latent states
+  // Likelihood of capture history
+  // marginalized over discrete latent states
   for (m in 1:M) 
   {
-    if (last_minus_first[m] > 0)  # if history m was recaptured
+    if (last_minus_first[m] > 0)  // if history m was recaptured
     {
       for(t in (first[m]+1):last[m])
       {
-        target += n[m] * log(phi_m[m,t-1]);                 # survival from t - 1 to t
-        target += n[m] * bernoulli_lpmf(y[m,t] | p_m[m,t]); # observation (captured or not)
+        target += n[m] * log(phi_m[m,t-1]);                 // survival from t - 1 to t
+        target += n[m] * bernoulli_lpmf(y[m,t] | p_m[m,t]); // observation (captured or not)
       }
     }
-    target += n[m] * log(chi[m,last[m]]);   # Pr[not detected after last[m]]
+    target += n[m] * log(chi[m,last[m]]);   // Pr[not detected after last[m]]
   }
 }
 
@@ -126,7 +126,7 @@ generated quantities {
         phi[j,t] = 0;
     }
   
-  p[,1] = rep_vector(1,J_p);  # set initial capture prob to 1
+  p[,1] = rep_vector(1,J_p);  // set initial capture prob to 1
   for(t in 2:T)
     for(j in 1:J_p)
     {
