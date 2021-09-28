@@ -109,20 +109,63 @@ methowSHsize <- read.csv(here("data","methowSHsize.csv"), header = TRUE, strings
 
 # Aggregate to unique (length_tag, length_rel) pairs for model fitting
 # Omit fish with both measurements missing
-methowSHsm <- methowSHsize %>% filter(!is.na(length_tag) & !is.na(length_rel)) %>% 
+methowSHs <- methowSHsize %>% filter(!is.na(length_tag) & !is.na(length_rel)) %>% 
   group_by(smolt_age, release_year, length_tag, length_rel) %>% 
   summarize(n = n()) %>% as.data.frame()
 
-# Convert to aggregated array format, including the covariates (some redundant):
+## "Small" capture history array (no length)
+# Convert capture histories to aggregated array format, incl. covariates (some redundant):
 # smolt_age, brood_year, release_year, return_year, adult_age, adult_age_factor
 # (which combines 4 and 5 and arbitrarily fills NAs)
-methowSHm <- methowSH %>% 
-  group_by(smolt_age, brood_year, release_year, length_NA, length_rel, return_year, adult_age,
+methowSHm <- methowSHsize %>%
+  filter(!is.na(length_tag) | !is.na(length_rel)) %>% 
+  select(tag) %>% left_join(methowSH, by = "tag") %>%
+  group_by(smolt_age, brood_year, release_year, return_year, adult_age, 
            WNFH, RRJ, MCJTWX, BOA, TDAWEA, LMR, MRCBRD) %>% 
   summarize(n = n()) %>% as.data.frame() %>% 
   mutate(adult_age_factor = factor(adult_age, exclude = NULL), .after = adult_age)
 
 levels(methowSHm$adult_age_factor) <- c("2","3","4+","4+","2")
+
+## "Full" capture history array (w/ length)
+# Convert capture histories to aggregated array format, incl. covariates (some redundant):
+# smolt_age, brood_year, release_year, length (at release, observed or predicted w/ SE), 
+# return_year, adult_age, adult_age_factor
+methowSHsm <- methowSHsize %>%
+  filter(!is.na(length_tag) | !is.na(length_rel)) %>% 
+  mutate(length_NA = is.na(length_rel), length = ifelse(length_NA, length_tag, length_rel), length_SE = 0) %>% 
+  select(tag, length_NA, length, length_SE) %>% left_join(methowSH, by = "tag") %>%
+  select(smolt_age:release_year, length_NA, length, length_SE, return_year:MRCBRD) %>% 
+  group_by(smolt_age, brood_year, release_year, length_NA, length, length_SE, 
+           return_year, adult_age, WNFH, RRJ, MCJTWX, BOA, TDAWEA, LMR, MRCBRD) %>% 
+  summarize(n = n()) %>% as.data.frame() %>% 
+  mutate(adult_age_factor = factor(adult_age, exclude = NULL), .after = adult_age)
+
+levels(methowSHsm$adult_age_factor) <- c("2","3","4+","4+","2")
+
+# Predict missing release lengths from hierarchical change-point models
+# (predictions are posterior medians)
+if(exists("fit_length_S1")) {
+  indx <- methowSHsm$length_NA & methowSHsm$smolt_age == "S1"
+  length_pred_S1 <- predict(fit_length_S1, 
+                            newdata = rename(methowSHsm[indx,], length_tag = length),
+                            allow_new_levels = TRUE, sample_new_levels = "gaussian")
+  methowSHsm <- mutate(methowSHsm, 
+                       length = replace(length, indx, length_pred_S1[,"Estimate"]),
+                       length_SE = replace(length_SE, indx, length_pred_S1[,"Est.Error"]))
+}
+
+if(exists("fit_length_S2")) {
+  indx <- methowSHsm$length_NA & methowSHsm$smolt_age == "S2"
+  length_pred_S2 <- predict(fit_length_S2, 
+                            newdata = rename(methowSHsm[indx,], length_tag = length),
+                            allow_new_levels = TRUE, sample_new_levels = "gaussian")
+  methowSHsm <- mutate(methowSHsm, 
+                       length = replace(length, indx, length_pred_S2[,"Estimate"]),
+                       length_SE = replace(length_SE, indx, length_pred_S2[,"Est.Error"]))
+}
+
+methowSHsm <- select(methowSHsm, -length_NA)
 
 # Year indices as grouping variables for phi and p random effects
 # Replace NA return years with arbitrary index that will not enter into the likelihood
@@ -142,32 +185,6 @@ group_p <- cbind(matrix(rep(release_year, 3), ncol = 3), matrix(rep(return_year,
 smolt_age <- scale(as.numeric(methowSHm$smolt_age), scale=F)
 adult_age <- na.replace(scale(methowSHm$adult_age, scale = F), 0)  # arbitrary NA value
 
-# Predict missing release lengths from hierarchical change-point models
-# (predictions are posterior medians)
-methowSH <- mutate(methowSH, length_pred = length_rel, length_se = NA, .after = length_rel)
-
-if(exists("brm_length_S1")) {
-  for(i in levels(methowSH$release_year)) {
-    indx <- with(methowSH, smolt_age == "S1" & release_year == i & !is.na(length_tag) & is.na(length_rel))
-    length_pred_S1 <- predict(brm_length_S1, newdata = methowSH[indx,],
-                              allow_new_levels = TRUE, sample_new_levels = "gaussian")
-    methowSH <- mutate(methowSH, 
-                       length_pred = replace(length_pred, indx, length_pred_S1[,"Estimate"]),
-                       length_se = replace(length_se, indx, length_pred_S1[,"Est.Error"]))
-  }
-}
-
-if(exists("brm_length_S2")) {
-  for(i in levels(methowSH$release_year)) {
-    indx <- with(methowSH, smolt_age == "S2" & release_year == i & !is.na(length_tag) & is.na(length_rel))
-    length_pred_S2 <- predict(brm_length_S2, newdata = methowSH[indx,],
-                              allow_new_levels = TRUE, sample_new_levels = "gaussian")
-    methowSH <- mutate(methowSH, 
-                       length_pred = replace(length_pred, indx, length_pred_S2[,"Estimate"]),
-                       length_se = replace(length_se, indx, length_pred_S2[,"Est.Error"]))
-  }
-}
-
 
 #---------------------------------------------------------------------------------
 # RANDOM CHANGE POINT GROWTH MODELS
@@ -180,7 +197,7 @@ if(exists("brm_length_S2")) {
 fit_length_S1 <- brm(bf(length_rel | weights(n) ~ b0 + b1*(length_tag - b3)*step(b3 - length_tag) + 
                           b2*(length_tag - b3)*step(length_tag - b3),
                         b0 + b1 + b2 + b3 ~ (1 | release_year), nl = TRUE),
-                     data = subset(methowSHsm, smolt_age == "S1"), 
+                     data = subset(methowSHs, smolt_age == "S1"), 
                      prior = c(prior(normal(15,5), nlpar = "b0", lb = 0),
                                prior(normal(5,5), nlpar = "b1", lb = 0),
                                prior(normal(2,5), nlpar = "b2", lb = 0),
@@ -194,7 +211,7 @@ summary(fit_length_S1)
 fit_length_S2 <- brm(bf(length_rel | weights(n) ~ b0 + b1*(length_tag - b3)*step(b3 - length_tag) + 
                           b2*(length_tag - b3)*step(length_tag - b3),
                         b0 + b1 + b2 + b3 ~ (1 | release_year), nl = TRUE),
-                     data = subset(methowSHsm, smolt_age == "S2"), 
+                     data = subset(methowSHs, smolt_age == "S2"), 
                      prior = c(prior(normal(15,5), nlpar = "b0", lb = 0),
                                prior(normal(5,5), nlpar = "b1", lb = 0),
                                prior(normal(2,5), nlpar = "b2", lb = 0),
@@ -253,10 +270,19 @@ fit_oa1b <- stan_glmer(ocean_age ~ smolt_age + (smolt_age_num || release_year),
 summary(fit_oa1b, probs = c(0.05,0.5,0.95))
 
 
-# ocean_age ~ smolt_age + length_rel
+# TEMP -----------------------------------------------------------------------------#
+
+# Expand aggregated array w/ length back to individual capture histories
+temp_data <- methowSHsm[rep(1:nrow(methowSHsm), times = methowSHsm$n), ] %>% select(-n) %>% 
+  mutate(ocean_age = factor(return_year - as.numeric(as.character(release_year))), .after = adult_age) %>% 
+  mutate(length_std = length - mean(length), .after = length)
+
+levels(temp_data$ocean_age) <- c("1","2+","2+")
+
+# ocean_age ~ smolt_age + length
 # Intercept varies by release year
-fit_oa2a <- stan_glmer(ocean_age ~ smolt_age + length_rel_fill + (1 | release_year), 
-                       data = cbind(methowSH, length_rel_fill = scale(length_rel_fill)),
+fit_oa2a <- stan_glmer(ocean_age ~ smolt_age + length + (1 | release_year), 
+                       data = temp_data,
                        family = binomial("logit"),
                        prior = normal(0,3),
                        prior_intercept = normal(0,1.5), 
@@ -266,14 +292,13 @@ fit_oa2a <- stan_glmer(ocean_age ~ smolt_age + length_rel_fill + (1 | release_ye
 summary(fit_oa2a, probs = c(0.05,0.5,0.95))
 
 
-# ocean_age ~ smolt_age + length_rel
+# ocean_age ~ smolt_age + length
 # Intercept, smolt_age and length effect all vary by release year, but are uncorrelated
 # (Note that the uncorrelated specification entails tricking the formula parser
 # into treating smolt_age as a binary 0/1 numeric variable)
-fit_oa2b <- stan_glmer(ocean_age ~ smolt_age + length_rel_fill + 
-                         (smolt_age_num + length_rel_fill || release_year), 
-                       data = cbind(methowSH, length_rel_fill = scale(length_rel_fill),
-                                    smolt_age_num = as.numeric(methowSH$smolt_age)),
+fit_oa2b <- stan_glmer(ocean_age ~ smolt_age + length + 
+                         (smolt_age_num + length || release_year), 
+                       data = cbind(temp_data, smolt_age_num = as.numeric(temp_data$smolt_age)),
                        family = binomial("logit"),
                        prior = normal(0,3),
                        prior_intercept = normal(0,1.5), 
@@ -283,15 +308,14 @@ fit_oa2b <- stan_glmer(ocean_age ~ smolt_age + length_rel_fill +
 summary(fit_oa2b, probs = c(0.05,0.5,0.95))
 
 
-# ocean_age ~ smolt_age * length_rel
+# ocean_age ~ smolt_age * length
 # Intercept, smolt_age and length main effects vary by release year, 
 # but are uncorrelated (interaction term is time-invariant)
 # (Note that the uncorrelated specification entails tricking the formula parser
 # into treating smolt_age as a binary 0/1 numeric variable)
-fit_oa2c <- stan_glmer(ocean_age ~ smolt_age * length_rel_fill + 
-                         (smolt_age_num + length_rel_fill || release_year), 
-                       data = cbind(methowSH, length_rel_fill = scale(length_rel_fill),
-                                    smolt_age_num = as.numeric(methowSH$smolt_age)),
+fit_oa2c <- stan_glmer(ocean_age ~ smolt_age * length + 
+                         (smolt_age_num + length || release_year), 
+                       data = cbind(temp_data, smolt_age_num = as.numeric(temp_data$smolt_age)),
                        family = binomial("logit"),
                        prior = normal(0,3),
                        prior_intercept = normal(0,1.5), 
@@ -299,6 +323,8 @@ fit_oa2c <- stan_glmer(ocean_age ~ smolt_age * length_rel_fill +
                        chains = 4, iter = 2000, warmup = 1000, cores = 4)
 
 summary(fit_oa2c, probs = c(0.05,0.5,0.95))
+
+#-----------------------------------------------------------------------------------#
 
 
 # Model selection
@@ -328,7 +354,7 @@ compair_oa
 
 cjs_all <- stan(file = here("analysis","stan","CJS.stan"),
                 data = list(T = 7, M = nrow(methowSHm), 
-                            y = methowSHm[,c("WNFH","RRJ","MCJTWX","BOA","TDAWEA","LMR","MRCBRD")],
+                            y = select(methowSHm, c(WNFH,RRJ,MCJTWX,BOA,TDAWEA,LMR,MRCBRD)),
                             n = methowSHm$n),
                 pars = c("phi","p","lambda","LL"),
                 chains = 3, cores = 3, iter = 2000, warmup = 1000,
