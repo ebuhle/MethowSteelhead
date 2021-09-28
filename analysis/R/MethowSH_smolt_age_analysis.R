@@ -281,7 +281,7 @@ levels(temp_data$ocean_age) <- c("1","2+","2+")
 
 # ocean_age ~ smolt_age + length
 # Intercept varies by release year
-fit_oa2a <- stan_glmer(ocean_age ~ smolt_age + length + (1 | release_year), 
+fit_oa2a <- stan_glmer(ocean_age ~ smolt_age + length_std + (1 | release_year), 
                        data = temp_data,
                        family = binomial("logit"),
                        prior = normal(0,3),
@@ -296,8 +296,8 @@ summary(fit_oa2a, probs = c(0.05,0.5,0.95))
 # Intercept, smolt_age and length effect all vary by release year, but are uncorrelated
 # (Note that the uncorrelated specification entails tricking the formula parser
 # into treating smolt_age as a binary 0/1 numeric variable)
-fit_oa2b <- stan_glmer(ocean_age ~ smolt_age + length + 
-                         (smolt_age_num + length || release_year), 
+fit_oa2b <- stan_glmer(ocean_age ~ smolt_age + length_std + 
+                         (smolt_age_num + length_std || release_year), 
                        data = cbind(temp_data, smolt_age_num = as.numeric(temp_data$smolt_age)),
                        family = binomial("logit"),
                        prior = normal(0,3),
@@ -313,8 +313,8 @@ summary(fit_oa2b, probs = c(0.05,0.5,0.95))
 # but are uncorrelated (interaction term is time-invariant)
 # (Note that the uncorrelated specification entails tricking the formula parser
 # into treating smolt_age as a binary 0/1 numeric variable)
-fit_oa2c <- stan_glmer(ocean_age ~ smolt_age * length + 
-                         (smolt_age_num + length || release_year), 
+fit_oa2c <- stan_glmer(ocean_age ~ smolt_age * length_std + 
+                         (smolt_age_num + length_std || release_year), 
                        data = cbind(temp_data, smolt_age_num = as.numeric(temp_data$smolt_age)),
                        family = binomial("logit"),
                        prior = normal(0,3),
