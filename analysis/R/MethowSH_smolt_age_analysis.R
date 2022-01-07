@@ -550,8 +550,8 @@ newdata <- newdata %>% mutate(fit = c(fit_S1[,"Estimate"], fit_S2[,"Estimate"]),
                               pred_L = c(pred_S1[,"Q2.5"], pred_S2[,"Q2.5"]),
                               pred_U = c(pred_S1[,"Q97.5"], pred_S2[,"Q97.5"]))
 
-dev.new(width = 10, height = 7)
-# png(filename=here("analysis","results","length_tag_rel.png"), width=10, height=7, units="in", res=300, type="cairo-png")
+# dev.new(width = 10, height = 7)
+png(filename=here("analysis","results","length_tag_rel.png"), width=10, height=7, units="in", res=300, type="cairo-png")
 ggplot(methowSHsize, aes(x = length_tag, y = length_rel, shape = smolt_age, color = smolt_age)) + 
   labs(x = "Length at tagging (cm)", y = "Length at release (cm)") + 
   geom_ribbon(aes(x = length_tag, ymin = pred_L, ymax = pred_U, fill = smolt_age),
@@ -566,7 +566,7 @@ ggplot(methowSHsize, aes(x = length_tag, y = length_rel, shape = smolt_age, colo
   theme(axis.title = element_text(size = rel(4)), axis.ticks = element_text(size = rel(3)),
         legend.text = element_text(size = rel(4)), strip.text = element_text(size = rel(10)),
         panel.grid = element_blank()) + theme_bw() + facet_wrap(~ release_year, scales = "free_x")
-# dev.off()
+dev.off()
 
 rm(list = c("npts","dat","mod","pred","length_tag","newdata","fit_S1","pred_S1","fit_S2","pred_S2"))
 
